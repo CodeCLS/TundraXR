@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tundra Brain · Local</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500&family=Lato:wght@300;400;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #f2f1e8; --raised: #faf9f4; --muted: #e9e7db; --border: #dcd9cb; --ring: #b8b5a6;
+    --ink: #2b2b2b; --ink-muted: #6b6a60; --inverse: #f2f1e8; --record: #e40014; --ok: #3f7a4e; --hl: #f1e3b0;
+    --sev-minor: #b7791f; --sev-major: #c2410c; --sev-critical: #e40014;
+    --radius: 10px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #1d1d1b; --raised: #262624; --muted: #302f2c; --border: #3b3a36; --ring: #55534c;
+      --ink: #edebe2; --ink-muted: #9d9b90; --inverse: #1d1d1b; --record: #ff4a4a; --ok: #7bc18c; --hl: #4a4128;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--paper); color: var(--ink); }
+  body {
+    font: 400 15px/1.55 Lato, system-ui, sans-serif;
+    background-image: radial-gradient(color-mix(in srgb, var(--ring) 45%, transparent) 1px, transparent 1px);
+    background-size: 22px 22px; min-height: 100vh;
+  }
+  .mono { font-family: "Geist Mono", ui-monospace, monospace; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-muted); }
+  header { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 14px; padding: 18px 32px; background: color-mix(in srgb, var(--paper) 88%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--border); }
+  .word { font-size: 22px; letter-spacing: -.01em; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ink); display: inline-block; }
+  .dot.ok { background: var(--ok); } .dot.off { background: var(--ring); } .dot.rec { background: var(--record); }
+  .pill { display: inline-flex; align-items: center; gap: 8px; }
+  .spacer { flex: 1; }
+  main { display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 28px; padding: 28px 32px 64px; max-width: 1500px; margin: 0 auto; }
+  @media (max-width: 1000px) { main { grid-template-columns: 1fr; padding: 20px 16px; } header { padding: 14px 16px; } }
+  .card { background: var(--raised); border: 1px solid var(--border); border-radius: var(--radius); }
+  .device { padding: 24px 28px; margin-bottom: 18px; }
+  .device h1 { font-weight: 300; font-size: 38px; line-height: 1.1; letter-spacing: -.025em; margin: 6px 0 18px; }
+  .facts { display: flex; flex-wrap: wrap; gap: 14px 32px; border-top: 1px solid var(--border); padding-top: 14px; }
+  .facts div span:last-child { display: block; font-size: 16px; }
+  .session-head { display: flex; align-items: baseline; gap: 12px; margin: 30px 0 12px; }
+  .feed { display: flex; flex-direction: column; gap: 14px; }
+  .item { overflow: hidden; }
+  .item.new { animation: in .35s ease-out; }
+  @keyframes in { from { opacity: 0; transform: translateY(6px); } }
+  .item.flash { box-shadow: 0 0 0 2px var(--ink); }
+  .item-top { display: flex; align-items: center; gap: 10px; padding: 14px 20px; border-bottom: 1px solid var(--border); }
+  .media { background: #000; display: flex; justify-content: center; }
+  .media img, .media video { display: block; max-width: 100%; max-height: 520px; }
+  .body { padding: 18px 20px 20px; }
+  .body p { margin: 0 0 10px; }
+  .summary { font-size: 18px; line-height: 1.5; }
+  .note-text { font-size: 18px; }
+  .steps { display: flex; gap: 6px; flex-wrap: wrap; }
+  .step { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid var(--border); border-radius: 999px; }
+  .step.running .dot { animation: pulse 1s infinite alternate; background: var(--ink); }
+  .step.done .dot { background: var(--ok); } .step.failed .dot { background: var(--record); } .step.pending .dot { background: var(--ring); }
+  @keyframes pulse { to { opacity: .2; } }
+  .section { margin-top: 16px; }
+  .section > .mono { display: block; margin-bottom: 6px; }
+  ul.clean { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  .finding { display: grid; grid-template-columns: auto 1fr auto; gap: 4px 12px; align-items: baseline; padding: 10px 12px; border-radius: 8px; background: var(--paper); }
+  .finding b { font-weight: 700; }
+  .finding .detail { grid-column: 2 / 4; color: var(--ink-muted); }
+  .sev { font-family: "Geist Mono", monospace; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; padding: 2px 7px; border-radius: 999px; border: 1px solid currentColor; }
+  .sev.info { color: var(--ink-muted); } .sev.minor { color: var(--sev-minor); } .sev.major { color: var(--sev-major); } .sev.critical { color: var(--sev-critical); }
+  .ts { font-family: "Geist Mono", monospace; font-size: 12px; color: var(--ink); background: var(--muted); border: 0; border-radius: 6px; padding: 2px 7px; cursor: pointer; }
+  .ts:hover { background: var(--ink); color: var(--inverse); }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { padding: 4px 10px; border: 1px solid var(--border); border-radius: 999px; background: var(--paper); font-size: 14px; }
+  .warn { color: var(--sev-major); }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 0 24px; }
+  @media (max-width: 700px) { .two { grid-template-columns: 1fr; } }
+  .qa { margin-top: 16px; border-top: 1px solid var(--border); padding-top: 14px; }
+  .qa .q { font-weight: 700; margin-top: 10px; }
+  .qa .a { white-space: pre-wrap; }
+  form.inline { display: flex; gap: 8px; margin-top: 10px; }
+  input[type=text] { flex: 1; font: inherit; color: var(--ink); background: var(--paper); border: 1px solid var(--border); border-radius: 999px; padding: 10px 16px; outline: none; min-width: 0; }
+  input[type=text]:focus { border-color: var(--ink); }
+  button.primary { font: 700 14px Lato, sans-serif; color: var(--inverse); background: var(--ink); border: 0; border-radius: 999px; padding: 10px 18px; cursor: pointer; }
+  button.primary:disabled { opacity: .4; cursor: default; }
+  button.ghost { font: 700 13px Lato, sans-serif; color: var(--ink); background: transparent; border: 1px solid var(--border); border-radius: 999px; padding: 6px 12px; cursor: pointer; }
+  aside { display: flex; flex-direction: column; gap: 18px; position: sticky; top: 90px; align-self: start; max-height: calc(100vh - 110px); overflow: auto; }
+  @media (max-width: 1000px) { aside { position: static; max-height: none; } }
+  .panel { padding: 20px; }
+  .panel h2 { font-size: 20px; font-weight: 400; margin: 0 0 4px; }
+  .result { display: grid; grid-template-columns: 96px 1fr; gap: 12px; padding: 8px; border-radius: 8px; cursor: pointer; }
+  .result:hover { background: var(--paper); }
+  .result.weak { opacity: .45; }
+  .result img, .result .thumb { width: 96px; height: 60px; object-fit: cover; border-radius: 6px; background: var(--muted); }
+  pre.wo { white-space: pre-wrap; font: 13px/1.6 "Geist Mono", monospace; background: var(--paper); border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin: 10px 0 0; max-height: 420px; overflow: auto; }
+  .empty { padding: 48px 32px; text-align: center; }
+  .empty h1 { font-weight: 300; font-size: 34px; margin: 0 0 8px; }
+  code { font: 13px "Geist Mono", monospace; background: var(--muted); padding: 2px 6px; border-radius: 6px; }
+  .question { padding: 16px 20px; }
+  .muted { color: var(--ink-muted); }
+</style>
+</head>
+<body>
+<header>
+  <span class="word">Tundra</span><span class="dot"></span><span class="mono">Brain · Local</span>
+  <span class="spacer"></span>
+  <span class="pill mono"><span id="hs-dot" class="dot off"></span><span id="hs-label">Headset offline</span></span>
+  <span class="pill mono"><span id="tl-dot" class="dot off"></span><span id="tl-label">TwelveLabs</span></span>
+</header>
+
+<main>
+  <section id="left"></section>
+  <aside>
+    <div class="card panel">
+      <h2>Search videos</h2>
+      <div class="mono">Marengo · across every recorded session</div>
+      <form class="inline" id="search-form">
+        <input type="text" id="search-q" placeholder="e.g. technician removes the fan filter" autocomplete="off">
+        <button class="primary" id="search-btn">Search</button>
+      </form>
+      <div id="search-results" style="margin-top:10px"></div>
+    </div>
+    <div class="card panel">
+      <div style="display:flex;align-items:center;gap:8px">
+        <h2 style="flex:1">Draft work order</h2>
+        <button class="ghost" id="copy-wo">Copy</button>
+      </div>
+      <div class="mono">Compiled from the latest session</div>
+      <pre class="wo" id="wo">No session yet.</pre>
+    </div>
+  </aside>
+</main>
+
+<script>
+const state = { captures: new Map(), status: {} };
+const $ = (s, el = document) => el.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const clock = (s) => { s = Math.max(0, Math.round(Number(s) || 0)); return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`; };
+const label = (s) => String(s ?? "").replaceAll("_", " ");
+const kindLabel = { photo: "Photo", video: "Video", note: "Voice note", question: "Question" };
+
+// ── Data ──────────────────────────────────────────────────────────────────────
+async function load() {
+  const r = await fetch("/api/state").then((r) => r.json());
+  r.captures.forEach((c) => state.captures.set(c.id, c));
+  setStatus(r);
+  render();
+  const es = new EventSource("/api/events");
+  es.addEventListener("capture", (e) => { const c = JSON.parse(e.data); const isNew = !state.captures.has(c.id); state.captures.set(c.id, c); render(isNew ? c.id : null); });
+  es.addEventListener("status", (e) => setStatus(JSON.parse(e.data)));
+}
+
+function setStatus(s) {
+  state.status = s;
+  const live = s.headsetSeenAt && Date.now() - s.headsetSeenAt < 20000;
+  $("#hs-dot").className = `dot ${live ? "ok" : "off"}`;
+  $("#hs-label").textContent = live ? "Headset connected" : "Headset offline";
+  $("#tl-dot").className = `dot ${s.twelveLabs ? "ok" : "off"}`;
+  $("#tl-label").textContent = s.twelveLabs ? "TwelveLabs on" : "TwelveLabs off";
+}
+
+function sessions() {
+  const by = new Map();
+  for (const c of [...state.captures.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt))) {
+    if (!by.has(c.sessionId)) by.set(c.sessionId, []);
+    by.get(c.sessionId).push(c);
+  }
+  return [...by.entries()].map(([id, items]) => ({ id, items, device: items.at(-1).device, start: items[0].createdAt })).reverse();
+}
+
+// ── Rendering ─────────────────────────────────────────────────────────────────
+// Cards are keyed by id and only their body is re-rendered, so playing videos aren't reset.
+function render(newId) {
+  const left = $("#left");
+  const ss = sessions();
+  if (!ss.length) {
+    left.innerHTML = emptyState();
+    renderWorkOrder(null);
+    return;
+  }
+  if ($(".empty", left)) left.innerHTML = "";
+  // Oldest first, each prepended, so the newest ends up on top.
+  for (const s of [...ss].reverse()) {
+    let sec = document.getElementById(`s-${s.id}`);
+    if (!sec) {
+      sec = document.createElement("div");
+      sec.id = `s-${s.id}`;
+      sec.innerHTML = `<div class="device card"></div><div class="session-head"><span class="mono">Session</span><span class="mono s-meta"></span></div><div class="feed"></div>`;
+      // Newest session on top.
+      left.prepend(sec);
+    }
+    $(".device", sec).innerHTML = deviceCard(s.device);
+    $(".s-meta", sec).textContent = `${new Date(s.start).toLocaleString()} · ${s.items.length} item${s.items.length === 1 ? "" : "s"}`;
+    const feed = $(".feed", sec);
+    for (const c of s.items) {
+      let el = document.getElementById(`c-${c.id}`);
+      if (!el) {
+        el = document.createElement("article");
+        el.id = `c-${c.id}`;
+        el.className = `card item${c.id === newId ? " new" : ""}`;
+        el.innerHTML = itemShell(c);
+        feed.prepend(el);
+      }
+      $(".item-top", el).innerHTML = itemTop(c);
+      $(".body", el).innerHTML = itemBody(c);
+    }
+  }
+  renderWorkOrder(ss[0]);
+  if (newId) document.getElementById(`c-${newId}`)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+function emptyState() {
+  const addr = (state.status.addresses || [])[0];
+  return `<div class="card empty">
+    <div class="mono">Waiting for the headset</div>
+    <h1>Record, take photos, or just talk.</h1>
+    <p class="muted">Everything captured on the Galaxy XR shows up here instantly.</p>
+    <p class="muted">USB: <code>adb reverse tcp:8787 tcp:8787</code>${addr ? ` &nbsp;·&nbsp; Wi-Fi: <code>http://${esc(addr)}:8787</code>` : ""}</p>
+  </div>`;
+}
+
+function deviceCard(d) {
+  return `<div class="mono">${esc(d.manufacturer)} · ${esc(d.category)}</div><h1>${esc(d.name)}</h1>
+    <div class="facts">${[["Asset", d.assetTag], ["Location", d.location], ["Serial", d.serial]].map(([k, v]) => `<div><span class="mono">${k}</span><span>${esc(v)}</span></div>`).join("")}</div>`;
+}
+
+function itemShell(c) {
+  const media = c.kind === "photo" && c.file ? `<div class="media"><img src="/media/${c.file}" alt="Photo"></div>`
+    : c.kind === "video" && c.file ? `<div class="media"><video src="/media/${c.file}" controls preload="metadata"></video></div>` : "";
+  return `<div class="item-top"></div>${media}<div class="body"></div>`;
+}
+
+function itemTop(c) {
+  const steps = [];
+  if (c.tl.upload !== "skipped") steps.push(["Upload", c.tl.upload]);
+  if (c.tl.analysis !== "skipped") steps.push(["Pegasus analysis", c.tl.analysis]);
+  if (c.tl.index !== "skipped") steps.push(["Search index", c.tl.index]);
+  return `<span class="mono" style="color:var(--ink)">${kindLabel[c.kind]}</span><span class="mono">${esc(c.at)}${c.durationSec ? ` · ${clock(c.durationSec)}` : ""}</span>
+    <span class="spacer"></span><div class="steps">${steps.map(([n, s]) => `<span class="step ${s} mono"><span class="dot"></span>${n}</span>`).join("")}</div>`;
+}
+
+function itemBody(c) {
+  if (c.kind === "note") return `<p class="note-text">“${esc(c.text)}”</p>`;
+  if (c.kind === "question") {
+    const m = (c.moments || []).map((m) => momentRow(m)).join("");
+    const pages = (c.manualHits || []).map((h) => `<li class="finding"><a class="ts" href="/manuals/${esc(h.manualId)}.pdf#page=${h.page}" target="_blank" rel="noopener">p. ${h.page}</a><b>${esc(h.section || h.title)}</b><span></span><span class="detail">${esc(h.text)}</span></li>`).join("");
+    return `<p class="note-text">${esc(c.text)}</p>
+      ${pages ? section(`From the ${esc(c.manualHits[0].title)}`, `<ul class="clean">${pages}</ul>`) : ""}
+      ${m ? `<div class="section"><span class="mono">Matching video moments</span>${m}</div>` : ""}
+      ${!pages && !m ? `<span class="mono">Asked in the headset</span>` : ""}`;
+  }
+  let h = "";
+  if (c.tl.error) h += `<p class="warn">${esc(c.tl.error)}</p>`;
+  const a = c.analysis;
+  if (!a) {
+    h += c.tl.analysis === "skipped" ? `<span class="mono">Stored · add a TwelveLabs key to analyze</span>` : `<span class="mono">Analyzing with TwelveLabs…</span>`;
+    return h;
+  }
+  h += `<p class="summary">${esc(a.summary)}</p>`;
+  const meta = [a.work_type && label(a.work_type), a.device_status_after && `status: ${label(a.device_status_after)}`].filter(Boolean);
+  if (meta.length) h += `<div class="chips">${meta.map((m) => `<span class="chip">${esc(m)}</span>`).join("")}</div>`;
+  if (a.device_identification) h += section("Identification", `<p>${esc(a.device_identification)}</p>`);
+  if (a.visible_labels?.length) h += section("Labels read", `<ul class="clean">${a.visible_labels.map((l) => `<li><span class="mono">${esc(label(l.kind))}</span> &nbsp;${esc(l.text)}</li>`).join("")}</ul>`);
+  if (a.findings?.length) h += section("Findings", `<ul class="clean">${a.findings.map((f) => `<li class="finding"><span class="sev ${esc(f.severity)}">${esc(f.severity)}</span><b>${esc(f.title)}</b>${ts(c, f.start_time)}<span class="detail">${esc(f.detail)}</span></li>`).join("")}</ul>`);
+  if (a.steps_performed?.length) h += section("Steps performed", `<ul class="clean">${a.steps_performed.map((s) => `<li>${ts(c, s.start_time)} ${esc(s.step)}</li>`).join("")}</ul>`);
+  const lists = [["Parts & consumables", a.parts_and_consumables], ["Tools & test equipment", a.tools_and_test_equipment], ["Safety concerns", a.safety_concerns, "warn"], ["Recommended follow-up", a.recommended_follow_up], ["Documentation gaps", a.documentation_gaps]]
+    .filter(([, v]) => v?.length).map(([t, v, cls]) => section(t, `<ul class="clean">${v.map((x) => `<li class="${cls || ""}">${esc(x)}</li>`).join("")}</ul>`));
+  if (lists.length) h += `<div class="two">${lists.join("")}</div>`;
+  if (a.tags?.length) h += section("Tags", `<div class="chips">${a.tags.map((t) => `<span class="chip">${esc(t)}</span>`).join("")}</div>`);
+  if (c.kind === "video") {
+    h += `<div class="qa"><span class="mono">Ask this video</span>${c.qa.map((q) => `<div class="q">${esc(q.question)}</div><div class="a">${esc(q.answer)}</div>`).join("")}
+      <form class="inline" data-ask="${c.id}"><input type="text" placeholder="Was the electrical safety test performed?" autocomplete="off"><button class="primary">Ask</button></form></div>`;
+  }
+  return h;
+}
+
+const section = (t, inner) => `<div class="section"><span class="mono">${t}</span>${inner}</div>`;
+const ts = (c, t) => (c.kind === "video" && typeof t === "number") ? `<button class="ts" data-seek="${c.id}" data-t="${t}">${clock(t)}</button>` : "<span></span>";
+
+/** One search result: a video clip (frame thumbnail) or a photo, labelled with what matched. */
+function resultRow({ captureId, start = 0, end, description, match = true }) {
+  const c = state.captures.get(captureId);
+  if (!c) return "";
+  const thumb = c.kind === "photo"
+    ? `<img src="/media/${c.file}" alt="">`
+    : `<video class="thumb" src="/media/${c.file}#t=${Number(start).toFixed(1)}" muted preload="metadata"></video>`;
+  const where = c.kind === "photo" ? `Photo · ${esc(c.at)}` : `Video · ${clock(start)}–${clock(end)}`;
+  const title = description || (c.kind === "photo" ? "Photo" : `Video ${c.at}`);
+  return `<div class="result${match ? "" : " weak"}" data-seek="${c.id}" data-t="${start}">${thumb}<div><div>${esc(title)}</div>
+    <div class="mono">${where} · ${esc(c.device.assetTag)}${match ? "" : " · no match"}</div></div></div>`;
+}
+const momentRow = (m) => resultRow(m);
+
+function seek(id, t) {
+  const el = document.getElementById(`c-${id}`);
+  if (!el) return;
+  el.scrollIntoView({ behavior: "smooth", block: "center" });
+  el.classList.add("flash"); setTimeout(() => el.classList.remove("flash"), 1200);
+  const v = $("video", el);
+  if (v) { v.currentTime = Number(t) || 0; v.play().catch(() => {}); }
+}
+
+// ── Work order ────────────────────────────────────────────────────────────────
+function renderWorkOrder(s) {
+  if (!s) { $("#wo").textContent = "No session yet."; return; }
+  const d = s.device, an = s.items.map((c) => c.analysis).filter(Boolean);
+  const all = (k) => [...new Set(an.flatMap((a) => a[k] || []))];
+  const findings = an.flatMap((a) => a.findings || []);
+  const steps = an.flatMap((a) => (a.steps_performed || []).map((x) => x.step));
+  const notes = s.items.filter((c) => c.kind === "note").map((c) => `- [${c.at}] ${c.text}`);
+  const types = [...new Set(an.map((a) => a.work_type).filter(Boolean).map(label))];
+  const status = an.map((a) => a.device_status_after).filter(Boolean).at(-1);
+  const list = (xs) => xs.length ? xs.map((x) => `- ${x}`).join("\n") : "- none recorded";
+  $("#wo").textContent = [
+    `DEVICE      ${d.manufacturer} ${d.name} (${d.category})`,
+    `ASSET       ${d.assetTag}   S/N ${d.serial}`,
+    `LOCATION    ${d.location}`,
+    `DATE        ${new Date(s.start).toLocaleString()}`,
+    `WORK TYPE   ${types.join(", ") || "—"}`,
+    `STATUS      ${status ? label(status) : "—"}`,
+    "",
+    "SUMMARY", ...an.map((a) => a.summary).filter(Boolean),
+    "", "FINDINGS", list(findings.map((f) => `[${f.severity}] ${f.title}: ${f.detail}`)),
+    "", "WORK PERFORMED", list(steps),
+    "", "PARTS / CONSUMABLES", list(all("parts_and_consumables")),
+    "", "TEST EQUIPMENT", list(all("tools_and_test_equipment")),
+    "", "SAFETY", list(all("safety_concerns")),
+    "", "FOLLOW-UP", list(all("recommended_follow_up")),
+    "", "TECHNICIAN NOTES", notes.length ? notes.join("\n") : "- none",
+    "", `ATTACHMENTS ${s.items.filter((c) => c.kind === "photo").length} photos, ${s.items.filter((c) => c.kind === "video").length} videos`,
+    all("documentation_gaps").length ? `\nGAPS TO CLOSE BEFORE SIGN-OFF\n${list(all("documentation_gaps"))}` : "",
+  ].join("\n");
+}
+
+// ── Events ────────────────────────────────────────────────────────────────────
+document.addEventListener("click", (e) => {
+  const s = e.target.closest("[data-seek]");
+  if (s) seek(s.dataset.seek, s.dataset.t);
+});
+
+document.addEventListener("submit", async (e) => {
+  const f = e.target.closest("form[data-ask]");
+  if (!f) return;
+  e.preventDefault();
+  const input = $("input", f), btn = $("button", f), q = input.value.trim();
+  if (!q) return;
+  btn.disabled = true; btn.textContent = "Thinking…";
+  const r = await fetch(`/api/captures/${f.dataset.ask}/ask`, { method: "POST", body: JSON.stringify({ question: q }) });
+  if (!r.ok) { btn.textContent = "Failed"; btn.disabled = false; return; }
+  // The SSE update re-renders the card with the answer.
+});
+
+$("#search-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const q = $("#search-q").value.trim();
+  if (!q) return;
+  const out = $("#search-results");
+  out.innerHTML = `<span class="mono">Searching · TwelveLabs is watching the clips…</span>`;
+  const r = await fetch("/api/search", { method: "POST", body: JSON.stringify({ query: q }) }).then((r) => r.json());
+  if (r.error) { out.innerHTML = `<p class="muted">${esc(r.error)}</p>`; return; }
+  const rows = [...r.moments.map((m) => ({ ...m, kind: "video" })), ...(r.photos || []).map((p) => ({ ...p, kind: "photo" }))]
+    .sort((a, b) => Number(b.match) - Number(a.match));
+  const hits = rows.filter((x) => x.match).length;
+  out.innerHTML = rows.length
+    ? `<div class="mono" style="margin:4px 8px 6px">${hits ? `${hits} match${hits === 1 ? "" : "es"}` : "No matches"} for “${esc(q)}”</div>${rows.map(resultRow).join("")}`
+    : `<p class="muted">Nothing searchable yet. Videos become searchable once their search index step is done.</p>`;
+});
+
+$("#copy-wo").addEventListener("click", async (e) => {
+  await navigator.clipboard.writeText($("#wo").textContent);
+  e.target.textContent = "Copied"; setTimeout(() => (e.target.textContent = "Copy"), 1200);
+});
+
+load();
+</script>
+</body>
+</html>

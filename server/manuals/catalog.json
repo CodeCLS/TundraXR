@@ -1,0 +1,41 @@
+{
+  "_note": "Manuals are real Medtronic PDFs from manuals.medtronic.com. Asset tag, serial, location, PM date and work orders are demo values until the brain reads them from the CMMS.",
+  "devices": [
+    {
+      "id": "pb980",
+      "name": "Puritan Bennett 980",
+      "manufacturer": "Medtronic",
+      "category": "Ventilator",
+      "assetTag": "ICU-VNT-0412",
+      "serial": "35B1800412",
+      "location": "ICU 3 · Bed 7",
+      "lastPm": "14 Jul 2026",
+      "openWorkOrders": 1,
+      "manual": { "id": "pb980-om", "file": "pb980-operators-manual.pdf", "title": "PB980 Operator's Manual", "docNumber": "PT00169219", "kind": "Operator's manual" }
+    },
+    {
+      "id": "pm100n",
+      "name": "Nellcor PM100N",
+      "manufacturer": "Medtronic",
+      "category": "Pulse oximetry monitor",
+      "assetTag": "MED-SPO-2291",
+      "serial": "HBC2140117",
+      "location": "Med/Surg 4 · Room 412",
+      "lastPm": "02 Mar 2026",
+      "openWorkOrders": 0,
+      "manual": { "id": "pm100n-sm", "file": "pm100n-service-manual.pdf", "title": "PM100N Service Manual", "docNumber": "PT00156333", "kind": "Service manual" }
+    },
+    {
+      "id": "ft10",
+      "name": "Valleylab FT10",
+      "manufacturer": "Medtronic",
+      "category": "Electrosurgical generator",
+      "assetTag": "OR-ESU-0087",
+      "serial": "T7J51031AX",
+      "location": "OR 6",
+      "lastPm": "21 Sep 2026",
+      "openWorkOrders": 2,
+      "manual": { "id": "ft10-sm", "file": "ft10-service-manual.pdf", "title": "FT10 Service Manual v5.x", "docNumber": "PT00208001", "kind": "Service manual" }
+    }
+  ]
+}
