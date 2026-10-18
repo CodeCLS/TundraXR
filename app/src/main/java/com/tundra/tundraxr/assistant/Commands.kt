@@ -30,6 +30,10 @@ sealed interface Command {
 }
 
 private val PHOTO = Regex("""\b(take|snap|grab|capture)\b.*\b(photo|picture|pic|image|shot)\b|\b(photo|picture) (of|this)\b|\bdocument (this|it|the) ?(device|machine)?\b""")
+/** The engineer's own keyword: anything "…am I looking at (right now)…" is about what's in view. */
+private val LOOKING_AT = Regex("""\b(am i|i'?m|we'?re|are we) (looking at|seeing|pointing at)\b|\bin front of (me|us)\b|\bwhat( is|'s|s) (this|that) (thing|device|machine)\b""")
+/** "take a photo … and tell me which/what it is": identify, don't document. */
+private val PHOTO_THEN_WHAT = Regex("""\b(which|what) (it|this|that) is\b|\btell me (which|what)\b|\bidentify\b|\brecogni[sz]e\b""")
 private val IDENTIFY = Regex("""\b(which|what) (medical )?(device|machine|equipment|system|unit)\b.*\b(looking at|in front of me|is (this|that|it)|am i|this is)\b|\bwhat am i looking at\b|\bwhat is (this|that)( (device|machine|thing))?$|\bwhat'?s (this|that)( (device|machine|thing))?$|\bidentify (this|it|that|the (device|machine))\b|\bscan (this|the) (device|machine|label)\b|\brecogni[sz]e (this|it|the device)\b""")
 private val FIND_PREFIX = Regex("""^(this is|it'?s|switch to|change to|select|use|find|look up|search for|i'?m working on|working on) (the |a |an |our )?""")
 private val REGION = Regex("""\b(select|pick|mark|crop|choose|draw)\b.*\b(region|area|box)\b|\bregion (capture|search|scan|select)\b|\b(search|scan) (a |an |this |the )?(region|area)\b|\bimage search\b""")
@@ -63,6 +67,8 @@ fun parseCommand(raw: String, devices: List<Device>, recording: Boolean): Comman
     if (STOP.containsMatchIn(text) && (recording || text.length < 24)) return Command.Stop
     if (CANCEL.matches(text)) return Command.Cancel
     if (REGION.containsMatchIn(text)) return Command.RegionCapture
+    if (!recording && LOOKING_AT.containsMatchIn(text)) return Command.Identify
+    if (!recording && PHOTO.containsMatchIn(text) && PHOTO_THEN_WHAT.containsMatchIn(text)) return Command.Identify
     if (!recording && IDENTIFY.containsMatchIn(text)) return Command.Identify
     if (PHOTO.containsMatchIn(text)) return Command.Photo(named)
     if (CLOSE_MANUAL.containsMatchIn(text)) return Command.CloseManual
