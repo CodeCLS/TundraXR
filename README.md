@@ -1,45 +1,51 @@
 # TundraXR
 
-Vision feature for **Samsung Galaxy XR** (Android XR) by [Tundra Health](https://tundrahealth.ai). Clinical engineers document a medical device hands-free — record video, take photos, talk — and every capture goes straight to the Tundra brain. They can ask the brain about the device and pull up the OEM manual scrolled to (and highlighting) the right passage.
+Hands-free assistant for **Samsung Galaxy XR** (Android XR) by [Tundra Health](https://tundrahealth.ai). A clinical engineer looks at a medical device and talks: the headset identifies the device with Tundra's image search, answers questions from the hospital's data (with charts and tables), opens the device's manual, and documents the work — video, live transcript, spoken notes, summarised by the Tundra brain — straight into Tundra.
 
 ```
-app/      Android XR app (Jetpack Compose for XR, CameraX, SpeechRecognizer)
-server/   Local "brain" on the laptop: captures, manual search, TwelveLabs video analysis, whisper.cpp voice fallback, live dashboard
+app/      Android XR app: the island, voice, hand tracking, camera, on-device crop, Tundra Cloud client
+server/   Optional laptop server: live dashboard, TwelveLabs video analysis, whisper.cpp voice fallback
+tools/    cropper/: export and check the on-device crop model (EfficientSAM-Ti on ExecuTorch)
 ```
 
-## Run the brain (laptop)
+## Using it
 
-Requires Node 22.18+ (runs TypeScript directly).
+A small dark **island** sits at the top of your view and follows your head. Grab it to move or resize it (that pins it; **Auto** puts it back). **Hold thumb and middle finger together** to talk, let go to send. Things to say:
+
+| Say | What happens |
+|---|---|
+| "What am I looking at right now?" | Photo → cropped to the device on the headset → Tundra image search → the device from the hospital's records |
+| "Open the manual" / "show me" | The device's manual from Tundra, beside the island |
+| Any question ("which devices are overdue?", "devices per type as a chart") | Answered by the Tundra brain; charts, tables and follow-ups open in an answer panel |
+| "Start recording" … "stop" | Video with live transcription; then video, transcript and a Tundra summary are uploaded to the device |
+| "Listen to my documentation" … "done" | A spoken note, summarised when long, uploaded to the device |
+| "Select a region" | Freeze the view, draw a box around a device, search just that |
+
+## Setup
+
+**1. Tundra Cloud key.** The headset talks to `https://app.tundrahealth.ai/api/external` directly. Create a key on the hospital's gateway (Admin → API & MCP; turn on external connections and text over the cloud *before* creating it, levels records/library/chat ≥ read, library write for uploads, device photos on) and put it in `local.properties` (git-ignored, never commit it):
+
+```properties
+tundra.apiKey=tgk_…
+```
+
+The key is compiled into the app build, so don't share the APK. Without a key the app goes through the laptop server instead.
+
+**2. Crop model (optional).** `app/src/main/assets/device_cropper.pte` (~41 MB) is built, not committed — see [tools/cropper/README.md](tools/cropper/README.md). Without it photos are searched uncropped.
+
+**3. Run.** Open the project in Android Studio and run `app` on a Galaxy XR (or the Android XR emulator). The app asks for camera, microphone and hand-tracking permission on first launch.
+
+## Laptop server (optional)
+
+Not needed for the headset. It adds a live dashboard of captures, TwelveLabs video analysis and search, and a whisper.cpp fallback for speech. Requires Node 22.18+.
 
 ```bash
 cd server
 npm install
-cp .env.example .env          # optional: add TWELVELABS_API_KEY for video/photo analysis + search
-npm start                     # http://localhost:8787  (live dashboard)
+cp .env.example .env          # TWELVELABS_API_KEY, TUNDRA_API_KEY (optional)
+npm start                     # http://localhost:8787
 ```
 
-**Manuals.** The OEM PDFs aren't in the repo (they're Medtronic's). Download them from [manuals.medtronic.com](https://manuals.medtronic.com) (United States → English → search by document number) and save them in `server/manuals/` under these names:
+Builds without `tundra.apiKey` use it at `http://localhost:8787` (kept reachable over USB with `adb reverse`) or `-Ptundra.serverUrl=http://<host>:8787`. Voice fallback: `brew install whisper-cpp` and put `ggml-base.en.bin` in `server/models/`.
 
-| Device | Document | Save as |
-|---|---|---|
-| Puritan Bennett 980 operator's manual | PT00169219 | `pb980-operators-manual.pdf` |
-| Nellcor PM100N service manual | PT00156333 | `pm100n-service-manual.pdf` |
-| Valleylab FT10 v5.x service manual | PT00208001 | `ft10-service-manual.pdf` |
-
-Devices whose PDF is missing are skipped. Add your own in `server/manuals/catalog.json`.
-
-**Voice fallback (optional).** If the headset's speech recognizer fails, the app sends audio to the laptop:
-
-```bash
-brew install whisper-cpp
-mkdir -p server/models
-curl -L -o server/models/ggml-base.en.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin
-```
-
-## Run the app (headset or XR emulator)
-
-Open the project in Android Studio and run `app` on a Galaxy XR over USB or on the Android XR emulator. The app talks to `http://localhost:8787`; the server keeps `adb reverse tcp:8787 tcp:8787` up automatically for connected devices. To point it elsewhere: `./gradlew installDebug -Ptundra.serverUrl=http://<host>:8787`.
-
-Without the server, the app falls back to a built-in demo device.
-
-**Demo mode.** To test the UI without the server or manuals, build with `tundra.demo=true` (uncomment it in `gradle.properties`, or `./gradlew installDebug -Ptundra.demo=true`). Questions, spoken or typed, get scripted answers with manual citations after a short "thinking" pause, and photos and videos run through a scripted upload → analysis → findings sequence. The island marks this as Demo.
+**Offline demo.** `-Ptundra.demo=true` builds a version with scripted answers and a sample device, for UI work without any backend.
