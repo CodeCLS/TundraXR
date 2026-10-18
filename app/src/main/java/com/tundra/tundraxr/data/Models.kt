@@ -62,9 +62,42 @@ data class ChatMessage(
     val text: String,
     val sources: List<Source> = emptyList(),
     val streaming: Boolean = false,
+    val charts: List<Chart> = emptyList(),
+    val tables: List<DataTable> = emptyList(),
+    val followUps: List<String> = emptyList(),
 )
 
-data class BrainAnswer(val text: String, val sources: List<Source>)
+data class BrainAnswer(
+    val text: String,
+    val sources: List<Source>,
+    val charts: List<Chart> = emptyList(),
+    val tables: List<DataTable> = emptyList(),
+    val followUps: List<String> = emptyList(),
+)
+
+enum class ChartType { Bar, Line, Area, Pie, Scatter }
+
+/** One point of a chart: an x value and one value per series (null is a gap, never a zero). */
+data class ChartPoint(val x: String, val values: List<Float?>)
+
+/** A chart from the Tundra brain, with its points already resolved from the hospital's data. */
+data class Chart(
+    val id: String,
+    val type: ChartType,
+    val title: String,
+    val caption: String,
+    val xLabel: String,
+    val yLabel: String,
+    val unit: String,
+    val series: List<String>,
+    val stacked: Boolean,
+    val points: List<ChartPoint>,
+    /** Example numbers, not the hospital's: must be labelled as such. */
+    val illustrative: Boolean = false,
+)
+
+/** A query result behind an answer. */
+data class DataTable(val name: String, val columns: List<String>, val rows: List<List<String>>, val rowCount: Int, val truncated: Boolean)
 
 data class ManualTarget(
     /** 1-based page in the PDF (or the printed page for structured manuals). */

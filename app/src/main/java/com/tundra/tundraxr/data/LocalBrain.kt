@@ -2,7 +2,6 @@ package com.tundra.tundraxr.data
 
 import com.tundra.tundraxr.formatClock
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -12,55 +11,97 @@ import java.net.URL
 import java.net.URLEncoder
 
 /**
- * Talks to the local Tundra brain (server/) on the engineer's laptop: devices, real OEM
- * manuals, captures and questions. Falls back to [demo] when the laptop can't be reached.
+ * Talks to the Tundra brain server on the engineer's laptop, which reaches Tundra Cloud with the
+ * hospital's key: devices, manuals, identification, captures and questions. Nothing is scripted:
+ * when the laptop or the cloud can't answer, the error says so.
  */
-class LocalBrain(private val baseUrl: String, private val demo: DemoBrain = DemoBrain()) : TundraBrain {
+class LocalBrain(private val baseUrl: String) : TundraBrain {
 
-    private var catalog: Map<String, Pair<Device, Manual>>? = null
+    /** Devices seen so far (inventory, identified, searched), with their manuals. */
+    private val known = java.util.concurrent.ConcurrentHashMap<String, Pair<Device, Manual>>()
+    private var inventoryLoaded = false
 
-    /** Identification is still simulated: the first catalog device, after a short "look". */
-    override suspend fun identifyDevice(): Device {
-        val devices = devices()
-        delay(1200)
-        return devices.firstOrNull() ?: demo.identifyDevice()
+    override suspend fun identifyDevice(): Device = devices().firstOrNull() ?: error("No devices from the Tundra brain")
+
+    override suspend fun devices(): List<Device> {
+        if (!inventoryLoaded) {
+            val arr = runCatching { JSONArray(get("/api/devices")) }.getOrNull() ?: return emptyList()
+            for (i in 0 until arr.length()) remember(arr.getJSONObject(i))
+            inventoryLoaded = true
+        }
+        return known.values.map { it.first }
     }
-
-    override suspend fun devices(): List<Device> =
-        loadCatalog()?.values?.map { it.first } ?: demo.devices()
 
     override suspend fun manual(manualId: String): Manual =
-        loadCatalog()?.values?.firstOrNull { it.second.id == manualId }?.second ?: demo.manual(manualId)
+        known.values.firstOrNull { it.second.id == manualId }?.second
+            ?: Manual(manualId, "No manual on file", "", 0, null, emptyList())
 
-    private suspend fun loadCatalog(): Map<String, Pair<Device, Manual>>? {
-        catalog?.let { return it }
-        val arr = runCatching { JSONArray(get("/api/devices")) }.getOrNull() ?: return null
-        return (0 until arr.length()).associate { i ->
-            val d = arr.getJSONObject(i)
-            val m = d.getJSONObject("manual")
-            val manual = Manual(
-                id = m.getString("id"),
-                title = m.getString("title"),
-                revision = m.getString("docNumber"),
-                pageCount = m.optInt("pages"),
-                pdfUrl = baseUrl + m.getString("url"),
-                pages = emptyList(),
-            )
-            val device = Device(
-                id = d.getString("id"),
-                name = d.getString("name"),
-                manufacturer = d.getString("manufacturer"),
-                category = d.getString("category"),
-                assetTag = d.getString("assetTag"),
-                serial = d.getString("serial"),
-                location = d.getString("location"),
-                lastPm = d.optString("lastPm"),
-                openWorkOrders = d.optInt("openWorkOrders"),
-                manualId = manual.id,
-            )
-            device.id to (device to manual)
-        }.also { catalog = it }
+    /** Parses a device as the server sends it (with its manual) and keeps it for later lookups. */
+    private fun remember(d: JSONObject): Device {
+        val m = d.optJSONObject("manual") ?: JSONObject()
+        val manual = Manual(
+            id = m.optString("id").ifEmpty { "none-${d.getString("id")}" },
+            title = m.optString("title").ifEmpty { "Manual" },
+            revision = m.optString("docNumber"),
+            pageCount = m.optInt("pages"),
+            // Devices without a manual of their own (only a manufacturer portal link) have no PDF.
+            pdfUrl = if (m.isNull("url") || m.optString("url").isEmpty()) null else baseUrl + m.getString("url"),
+            // Text manuals (no PDF) arrive as sections and show as pages.
+            pages = m.optJSONArray("sections")?.let { arr ->
+                (0 until arr.length()).map { i ->
+                    val sec = arr.getJSONObject(i)
+                    ManualPage(i + 1, "", sec.optString("title"), sec.optString("text").split(Regex("\n\\s*\n")).map { it.trim() }.filter { it.isNotEmpty() })
+                }
+            } ?: emptyList(),
+        )
+        val device = Device(
+            id = d.getString("id"),
+            name = d.optString("name"),
+            manufacturer = d.optString("manufacturer"),
+            category = d.optString("category"),
+            assetTag = d.optString("assetTag"),
+            serial = d.optString("serial"),
+            location = d.optString("location"),
+            lastPm = d.optString("lastPm"),
+            openWorkOrders = d.optInt("openWorkOrders"),
+            manualId = manual.id,
+        )
+        known[device.id] = device to manual
+        return device
     }
+
+    override suspend fun identify(sessionId: String, image: File): List<ImageMatch> {
+        // Full camera frames are several MB; Tundra reads a type plate fine at 2048 px.
+        val small = withContext(Dispatchers.IO) { shrink(image) } ?: image
+        val res = JSONObject(post("/api/identify", JSONObject().put("sessionId", sessionId), small, "image/jpeg"))
+        val arr = res.optJSONArray("matches") ?: JSONArray()
+        return (0 until arr.length()).map { i ->
+            val m = arr.getJSONObject(i)
+            ImageMatch(
+                label = m.optString("label"),
+                device = m.optJSONObject("device")?.let(::remember),
+                confidence = m.optDouble("score", 0.0).toFloat(),
+                detail = m.optString("detail").ifEmpty { null },
+            )
+        }
+    }
+
+    private fun shrink(file: File, maxPx: Int = 2048): File? = runCatching {
+        val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        android.graphics.BitmapFactory.decodeFile(file.path, bounds)
+        if (maxOf(bounds.outWidth, bounds.outHeight) <= maxPx && file.length() < 1_500_000) return@runCatching file
+        var sample = 1
+        while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= maxPx) sample *= 2
+        val bmp = android.graphics.BitmapFactory.decodeFile(file.path, android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }) ?: return@runCatching null
+        val out = File(file.parentFile, "search_${file.name}")
+        out.outputStream().use { bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 85, it) }
+        out
+    }.getOrNull()
+
+    override suspend fun findDevices(query: String): List<Device> = runCatching {
+        val arr = JSONArray(get("/api/devices/search?q=${URLEncoder.encode(query, "UTF-8")}"))
+        (0 until arr.length()).map { remember(arr.getJSONObject(it)) }
+    }.getOrDefault(emptyList())
 
     override suspend fun ingest(sessionId: String, device: Device, item: CaptureItem): Pair<String?, RemoteStatus> {
         val kind = when (item.kind) {
@@ -81,13 +122,13 @@ class LocalBrain(private val baseUrl: String, private val demo: DemoBrain = Demo
         return created.getString("id") to created.toStatus()
     }
 
-    override suspend fun ask(sessionId: String, device: Device, question: String, session: List<CaptureItem>): BrainAnswer {
+    override suspend fun ask(sessionId: String, device: Device?, question: String, session: List<CaptureItem>): BrainAnswer {
         val body = JSONObject()
             .put("sessionId", sessionId)
             .put("question", question)
-            .put("device", meta(sessionId, device, "question", "").getJSONObject("device"))
+            .apply { if (device != null) put("device", deviceJson(device)) }
         val res = runCatching { JSONObject(postJson("/api/ask", body)) }.getOrElse {
-            return demo.ask(sessionId, device, question, session)
+            return BrainAnswer("Couldn't reach the Tundra brain: ${it.message?.take(160)}", emptyList())
         }
         val hits = res.optJSONArray("manualHits") ?: JSONArray()
         val manualSources = (0 until hits.length()).map { i ->
@@ -105,7 +146,54 @@ class LocalBrain(private val baseUrl: String, private val demo: DemoBrain = Demo
             val m = moments.getJSONObject(i)
             Source(SourceKind.Video, "${formatClock(m.optDouble("start").toInt())}–${formatClock(m.optDouble("end").toInt())} · on laptop")
         }
-        return BrainAnswer(res.getString("answer"), manualSources + videoSources)
+        return BrainAnswer(
+            res.getString("answer"),
+            manualSources + videoSources,
+            charts = res.optJSONArray("charts")?.let { a -> (0 until a.length()).mapNotNull { parseChart(a.getJSONObject(it)) } } ?: emptyList(),
+            tables = res.optJSONArray("tables")?.let { a -> (0 until a.length()).map { parseTable(a.getJSONObject(it)) } } ?: emptyList(),
+            followUps = res.optJSONArray("followUps")?.let { a -> (0 until a.length()).map { a.getString(it) } } ?: emptyList(),
+        )
+    }
+
+    private fun parseChart(c: JSONObject): Chart? = runCatching {
+        val spec = c.getJSONObject("spec")
+        val series = spec.getJSONArray("series")
+        val points = c.getJSONArray("points")
+        Chart(
+            id = c.optString("id"),
+            type = when (spec.optString("type")) {
+                "line" -> ChartType.Line
+                "area" -> ChartType.Area
+                "pie" -> ChartType.Pie
+                "scatter" -> ChartType.Scatter
+                else -> ChartType.Bar
+            },
+            title = spec.optString("title"),
+            caption = spec.optString("caption"),
+            xLabel = spec.optJSONObject("x")?.optString("label").orEmpty(),
+            yLabel = spec.optJSONObject("y")?.optString("label").orEmpty(),
+            unit = spec.optJSONObject("y")?.optString("unit").orEmpty().takeIf { it != "none" }.orEmpty(),
+            series = (0 until series.length()).map { series.getJSONObject(it).optString("label") },
+            stacked = spec.optBoolean("stacked"),
+            points = (0 until points.length()).map { i ->
+                val p = points.getJSONObject(i)
+                val v = p.getJSONArray("values")
+                ChartPoint(p.get("x").toString(), (0 until v.length()).map { if (v.isNull(it)) null else v.getDouble(it).toFloat() })
+            },
+            illustrative = spec.optBoolean("illustrative"),
+        )
+    }.getOrNull()
+
+    private fun parseTable(t: JSONObject): DataTable {
+        val cols = t.getJSONArray("columns")
+        val rows = t.getJSONArray("rows")
+        return DataTable(
+            name = t.optString("dataset"),
+            columns = (0 until cols.length()).map { cols.get(it).let { c -> (c as? JSONObject)?.optString("label") ?: c.toString() } },
+            rows = (0 until rows.length()).map { r -> rows.getJSONArray(r).let { row -> (0 until row.length()).map { if (row.isNull(it)) "" else row.get(it).toString() } } },
+            rowCount = t.optInt("row_count", rows.length()),
+            truncated = t.optBoolean("truncated"),
+        )
     }
 
     override suspend fun statuses(sessionId: String): Map<String, RemoteStatus>? = runCatching {
@@ -119,13 +207,12 @@ class LocalBrain(private val baseUrl: String, private val demo: DemoBrain = Demo
         .put("sessionId", sessionId)
         .put("kind", kind)
         .put("at", at)
-        .put(
-            "device",
-            JSONObject()
-                .put("id", device.id).put("name", device.name).put("manufacturer", device.manufacturer)
-                .put("category", device.category).put("assetTag", device.assetTag)
-                .put("serial", device.serial).put("location", device.location),
-        )
+        .put("device", deviceJson(device))
+
+    private fun deviceJson(device: Device) = JSONObject()
+        .put("id", device.id).put("name", device.name).put("manufacturer", device.manufacturer)
+        .put("category", device.category).put("assetTag", device.assetTag)
+        .put("serial", device.serial).put("location", device.location)
 
     private suspend fun post(path: String, meta: JSONObject, file: File?, contentType: String?): String = withContext(Dispatchers.IO) {
         val conn = open(path, readTimeoutMs = 120_000)
@@ -141,7 +228,8 @@ class LocalBrain(private val baseUrl: String, private val demo: DemoBrain = Demo
 
     private suspend fun postJson(path: String, body: JSONObject): String = withContext(Dispatchers.IO) {
         val bytes = body.toString().toByteArray()
-        val conn = open(path, readTimeoutMs = 30_000)
+        // Cloud answers can take a while (the brain may continue in a background job).
+        val conn = open(path, readTimeoutMs = 120_000)
         conn.requestMethod = "POST"
         conn.doOutput = true
         conn.setRequestProperty("content-type", "application/json")

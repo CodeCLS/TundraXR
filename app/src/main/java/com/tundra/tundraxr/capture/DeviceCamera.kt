@@ -90,7 +90,11 @@ class DeviceCamera(private val context: Context) {
     }
 
     @SuppressLint("MissingPermission") // audio is only enabled after checking RECORD_AUDIO
-    fun startRecording(): Boolean {
+    /**
+     * [withAudio] is off while the hands-free listener has the mic: Android gives a shared mic to
+     * only one recorder, and the engineer's narration is transcribed into the record instead.
+     */
+    fun startRecording(withAudio: Boolean = true): Boolean {
         if (!available || recording != null) return false
         if (!concurrent && !bindUseCases(videoCapture)) return false
         val file = File(mediaDir, "video_${System.currentTimeMillis()}.mp4")
@@ -99,7 +103,7 @@ class DeviceCamera(private val context: Context) {
         val hasMic = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
         recording = videoCapture.output
             .prepareRecording(context, FileOutputOptions.Builder(file).build())
-            .apply { if (hasMic) withAudioEnabled() }
+            .apply { if (hasMic && withAudio) withAudioEnabled() }
             .start(ContextCompat.getMainExecutor(context)) { event ->
                 if (event is VideoRecordEvent.Finalize) {
                     if (event.hasError()) Log.w(TAG, "Recording finalized with error ${event.error}", event.cause)

@@ -46,7 +46,9 @@ export interface Capture {
     assetId?: string;
     indexedAssetId?: string;
     error?: string;
-  };
+    /** Copy in Tundra Cloud, attached to the hospital device. */
+  cloud?: { status: "sent" | "failed"; documentId?: string; error?: string };
+};
   analysis?: Record<string, unknown>;
   qa: QA[];
 }

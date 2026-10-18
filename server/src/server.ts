@@ -8,6 +8,7 @@ import { execFile } from "node:child_process";
 import { Store, type Capture, type DeviceInfo, type ManualHit } from "./store.ts";
 import { Manuals, type Hit } from "./manuals.ts";
 import { VideoBrain } from "./twelvelabs.ts";
+import { TundraCloud, parseCloudId, type CloudDevice } from "./cloud.ts";
 
 const PORT = Number(process.env.PORT ?? 8787);
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -21,6 +22,8 @@ function broadcast(event: string, data: unknown) {
   const msg = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
   for (const res of clients) res.write(msg);
 }
+
+const cloud = new TundraCloud(process.env.TUNDRA_API_KEY, dataDir);
 
 const brain = new VideoBrain(process.env.TWELVELABS_API_KEY, store, (c) => broadcast("capture", c));
 
@@ -46,6 +49,7 @@ async function readBody(req: http.IncomingMessage, limit = 500 * 1024 * 1024): P
 function status() {
   return {
     twelveLabs: brain.enabled,
+    tundraCloud: cloud.enabled,
     indexId: store.indexId ?? null,
     headsetSeenAt,
     addresses: Object.values(os.networkInterfaces()).flat().filter((a) => a && a.family === "IPv4" && !a.internal).map((a) => a!.address),
@@ -110,8 +114,51 @@ async function createCapture(req: http.IncomingMessage, res: http.ServerResponse
   store.add(c);
   broadcast("capture", c);
   brain.process(c);
+  sendToCloud(c);
   console.log(`[capture] ${c.kind} ${c.id} ${c.device.assetTag} ${c.bytes ? `${(c.bytes / 1e6).toFixed(1)} MB` : c.text ?? ""}`);
   json(res, 201, c);
+}
+
+/**
+ * Captures of a hospital device also go to Tundra Cloud, attached to that device: photos as
+ * images, notes and narration as protocols, and a video as a protocol describing it (the
+ * cloud takes images and text, not video).
+ */
+function sendToCloud(c: Capture) {
+  const ref = parseCloudId(c.device.id);
+  if (!cloud.enabled || !ref) return;
+  const stamp = new Date(c.createdAt).toISOString().slice(0, 16).replace("T", " ");
+  const job = (async () => {
+    if (c.kind === "photo" && c.file) {
+      const bytes = fs.readFileSync(path.join(store.mediaDir, c.file));
+      // Already in Tundra from the image search: attach that copy to the device instead.
+      const known = searchedPhotos.get(sha(bytes));
+      if (known) {
+        await cloud.attachDocument(known, ref).catch((e) => console.warn(`[cloud] attach ${known}: ${e.message}`));
+        return known;
+      }
+      return cloud.uploadImage(ref, bytes, c.mime ?? "image/jpeg", `TundraXR ${stamp} ${c.device.assetTag}.jpg`);
+    }
+    if (c.kind === "note" && c.text) {
+      return cloud.uploadNote(ref, `TundraXR Notiz ${stamp}`, c.text);
+    }
+    if (c.kind === "video") {
+      const mins = Math.floor((c.durationSec ?? 0) / 60);
+      const secs = String((c.durationSec ?? 0) % 60).padStart(2, "0");
+      return cloud.uploadNote(ref, `TundraXR Video ${stamp}`, `Video documentation recorded with TundraXR (${mins}:${secs}) for ${c.device.name} (${c.device.assetTag}). Stored on the engineer's laptop as ${c.file ?? "—"}.`);
+    }
+    return null;
+  })();
+  job.then((documentId) => {
+    if (documentId === null) return;
+    const updated = store.update(c.id, (x) => { x.cloud = { status: "sent", documentId }; });
+    if (updated) broadcast("capture", updated);
+    console.log(`[cloud] ${c.kind} ${c.id} → ${documentId}`);
+  }).catch((e) => {
+    const updated = store.update(c.id, (x) => { x.cloud = { status: "failed", error: e.message }; });
+    if (updated) broadcast("capture", updated);
+    console.warn(`[cloud] ${c.kind} ${c.id} failed: ${e.message}`);
+  });
 }
 
 /** Shortens a passage to whole sentences for reading in the headset. */
@@ -129,9 +176,12 @@ function excerpt(text: string, max = 360): string {
  */
 async function ask(req: http.IncomingMessage, res: http.ServerResponse) {
   const { sessionId, device, question } = JSON.parse((await readBody(req)).toString() || "{}") as {
-    sessionId: string; device: DeviceInfo; question: string;
+    sessionId: string; device?: DeviceInfo; question: string;
   };
-  if (!sessionId || !device || !question) return json(res, 400, { error: "sessionId, device and question are required" });
+  if (!sessionId || !question) return json(res, 400, { error: "sessionId and question are required" });
+  // Hospital devices, and general questions (fleet, inspections…), go to the Tundra brain.
+  if (cloud.enabled && (!device || parseCloudId(device.id))) return askCloud(res, sessionId, device ?? null, question);
+  if (!device) return json(res, 200, { answer: "Tundra Cloud is off on this laptop, so only questions about a device can be answered.", manualHits: [], moments: [] });
   const entry = manuals.device(device.id);
   const hits: Hit[] = entry ? await manuals.search(entry.manual.id, question, 3) : [];
   const manualHits: ManualHit[] = hits.map((h) => ({
@@ -159,6 +209,54 @@ async function ask(req: http.IncomingMessage, res: http.ServerResponse) {
   store.add(c);
   broadcast("capture", c);
   json(res, 200, { answer, manualHits, moments });
+}
+
+/** A question about a hospital device goes to the Tundra brain; its cited pages open in the manual. */
+async function askCloud(res: http.ServerResponse, sessionId: string, device: DeviceInfo | null, question: string) {
+  const t0 = Date.now();
+  const ref = device ? parseCloudId(device.id) : null;
+  const d = device ? await cloud.findDevice(device.id) : null;
+  let r;
+  try {
+    r = await cloud.ask(sessionId, question, ref);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.warn(`[cloud] ask failed: ${msg}`);
+    return json(res, 200, { answer: `The Tundra brain couldn't answer: ${cloudReason(msg)}`, manualHits: [], moments: [] });
+  }
+  const manualDoc = d?.manual.documentId;
+  // Pages in the device's own manual first: that's the document the headset has open.
+  const sources = [...r.sources].sort((a, b) => Number(b.documentId === manualDoc) - Number(a.documentId === manualDoc));
+  const manualHits: ManualHit[] = sources.filter((s) => s.pages.length && s.documentId === manualDoc).map((s) => ({
+    manualId: s.documentId, title: s.title, page: s.pages[0], section: s.title, text: "",
+  }));
+  const answer = r.answer.replace(/\s*\[\d+\]/g, "").trim() || "The Tundra brain had no answer for that.";
+  console.log(`[cloud] ask "${question.slice(0, 60)}" → ${answer.length} chars, ${r.sources.length} sources in ${Date.now() - t0} ms`);
+  const c: Capture = {
+    id: crypto.randomUUID().slice(0, 8), sessionId, kind: "question", at: "", createdAt: new Date().toISOString(),
+    device: device ?? GENERAL, text: question, answer, manualHits, moments: [], tl: { upload: "skipped", analysis: "skipped", index: "skipped" }, qa: [],
+  };
+  store.add(c);
+  broadcast("capture", c);
+  json(res, 200, {
+    answer, manualHits, moments: [], sources: r.sources, conversationId: r.conversationId,
+    charts: r.charts, tables: r.tables, followUps: r.followUps, notices: r.notices,
+  });
+}
+
+/** Questions that aren't about one device are logged against the hospital as a whole. */
+const GENERAL: DeviceInfo = { id: "hospital", name: "Hospital", manufacturer: "", category: "General", assetTag: "—", serial: "", location: "" } as DeviceInfo;
+
+/** The cloud's error codes, as something an engineer can act on. */
+function cloudReason(msg: string): string {
+  if (msg.includes("feature_not_allowed")) return "this key isn't allowed to use that feature (gateway → Admin → API & MCP).";
+  if (msg.includes("cloud_text_off")) return "text over the cloud is off on the gateway.";
+  if (msg.includes("budget_exhausted")) return "the hospital's AI budget is used up.";
+  if (msg.includes("image_search")) return "Tundra's image search is unavailable right now.";
+  if (msg.includes("images_off")) return "device photos are off on the gateway.";
+  if (msg.includes("invalid_key")) return "the API key isn't valid.";
+  if (msg.includes("not_found") || msg.includes("404")) return "not found in the hospital's records.";
+  return msg.slice(0, 160);
 }
 
 /**
@@ -202,7 +300,65 @@ function warmUpWhisper() {
 warmUpWhisper();
 
 async function devices() {
+  // With Tundra Cloud on, the inventory is the hospital's real records only; the local OEM
+  // catalog (server/manuals) is the offline demo and only used without a key.
+  if (cloud.enabled) {
+    const remote = await cloud.devices().catch((e) => { console.warn(`[cloud] devices: ${e.message}`); return [] as CloudDevice[]; });
+    return Promise.all(remote.map(toHeadsetDevice));
+  }
   return Promise.all(manuals.devices.map(async (d) => ({ ...d, manual: { ...d.manual, pages: await manuals.pages(d.manual.id), url: `/manuals/${d.manual.id}.pdf` } })));
+}
+
+async function toHeadsetDevice(d: CloudDevice) {
+  const doc = d.manual.documentId;
+  // PDFs open in the page viewer; text manuals (the hospital's markdown copies) as sections.
+  const sections = doc && !d.manual.isPdf ? await cloud.documentSections(doc).catch(() => []) : [];
+  return {
+    id: d.id, name: d.name, manufacturer: d.manufacturer, category: d.model || "Medical device",
+    assetTag: d.assetTag, serial: d.serial, location: d.location, lastPm: d.lastPm, openWorkOrders: d.openWorkOrders,
+    manual: {
+      id: doc ?? `none-${d.ref.key}`,
+      title: doc ? d.manual.title : "No manual on file",
+      docNumber: d.manual.revision,
+      pages: 0,
+      url: doc && d.manual.isPdf ? `/cloud/documents/${encodeURIComponent(doc)}.pdf` : null,
+      sections,
+    },
+  };
+}
+
+/** Photos Tundra already holds from an image search, by content hash, so they aren't uploaded twice. */
+const searchedPhotos = new Map<string, string>();
+const sha = (b: Buffer) => crypto.createHash("sha1").update(b).digest("hex");
+
+/**
+ * POST /api/identify  (body: JPEG; header x-tundra-meta { sessionId })
+ * "Which device am I looking at": Tundra's image search, then each match's record.
+ */
+async function identify(req: http.IncomingMessage, res: http.ServerResponse) {
+  const image = await readBody(req, 20 * 1024 * 1024);
+  if (!cloud.enabled) return json(res, 503, { error: "Tundra Cloud is off on this laptop (no TUNDRA_API_KEY)." });
+  if (image.length < 100) return json(res, 400, { error: "no image" });
+  const t0 = Date.now();
+  let out;
+  try {
+    out = await cloud.imageSearch(image, String(req.headers["content-type"] ?? "image/jpeg").split(";")[0]);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.warn(`[cloud] image search failed: ${msg}`);
+    return json(res, 502, { error: cloudReason(msg) });
+  }
+  if (out.documentId) searchedPhotos.set(sha(image), out.documentId);
+  const devices = await Promise.all(out.picks.slice(0, 3).map((p) => cloud.device(p.ref).then(toHeadsetDevice).catch(() => null)));
+  const matches = out.picks.slice(0, 3).map((p, i) => ({
+    label: devices[i] ? `${devices[i]!.name || devices[i]!.category} · ${devices[i]!.assetTag}` : p.label.replace(/<PSN-[^>]+>\s*·?\s*/g, ""),
+    score: p.score,
+    detail: i === 0 && out.read ? `Read: ${out.read}${p.on.startsWith("search") ? "" : ` · matched on ${p.on}`}` : null,
+    device: devices[i],
+  }));
+  if (!matches.length && out.read) matches.push({ label: out.read, score: 0, detail: out.identified?.is_device === false ? "Not a medical device · not in the hospital's records" : "Not in the hospital's records", device: null });
+  console.log(`[cloud] identify: read "${out.read}" → ${out.picks.length} matches in ${Date.now() - t0} ms`);
+  json(res, 200, { matches, documentId: out.documentId });
 }
 
 const server = http.createServer(async (req, res) => {
@@ -218,12 +374,25 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === "GET" && (p === "/" || p === "/index.html")) return serveFile(req, res, path.join(root, "public", "index.html"));
     if (req.method === "GET" && p === "/api/devices") return json(res, 200, await devices());
+    if (req.method === "GET" && p === "/api/devices/search") {
+      const q = url.searchParams.get("q") ?? "";
+      if (!cloud.enabled || q.length < 2) return json(res, 200, []);
+      const hits = await cloud.search(q).catch((e) => { console.warn(`[cloud] search: ${e.message}`); return []; });
+      const found = await Promise.all(hits.slice(0, 5).map((h) => cloud.device(h.ref).catch(() => null)));
+      return json(res, 200, await Promise.all(found.filter((d): d is CloudDevice => !!d).map(toHeadsetDevice)));
+    }
     const pdf = p.match(/^\/manuals\/([\w-]+)\.pdf$/);
     if (req.method === "GET" && pdf) {
       const file = manuals.file(pdf[1]);
       return file ? serveFile(req, res, file) : json(res, 404, { error: "unknown manual" });
     }
+    const cloudDoc = p.match(/^\/cloud\/documents\/(.+)\.pdf$/);
+    if (req.method === "GET" && cloudDoc) {
+      if (!cloud.enabled) return json(res, 404, { error: "Tundra Cloud is off" });
+      return serveFile(req, res, await cloud.documentFile(decodeURIComponent(cloudDoc[1])));
+    }
     if (req.method === "POST" && p === "/api/ask") return await ask(req, res);
+    if (req.method === "POST" && p === "/api/identify") return await identify(req, res);
     if (req.method === "POST" && p === "/api/transcribe") return await transcribe(req, res);
     if (req.method === "GET" && p.startsWith("/media/")) return serveFile(req, res, path.join(store.mediaDir, path.basename(p)));
     if (req.method === "GET" && p === "/api/state") return json(res, 200, { ...status(), captures: store.all() });
@@ -299,5 +468,11 @@ server.listen(PORT, "0.0.0.0", () => {
   const s = status();
   console.log(`\n  Tundra brain (local) · http://localhost:${PORT}`);
   for (const a of s.addresses) console.log(`  On Wi-Fi the headset can reach it at http://${a}:${PORT}`);
-  console.log(`  TwelveLabs: ${brain.enabled ? "enabled" : "disabled — add TWELVELABS_API_KEY to server/.env"}\n`);
+  console.log(`  TwelveLabs: ${brain.enabled ? "enabled" : "disabled — add TWELVELABS_API_KEY to server/.env"}`);
+  console.log(`  Tundra Cloud: ${cloud.enabled ? "enabled" : "disabled — add TUNDRA_API_KEY (tgk_…) to server/.env"}\n`);
+  if (cloud.enabled) {
+    cloud.whoami().then((w) => console.log(`[cloud] key ok · text ${w.cloud_text ? "allowed" : "OFF (chat/search/devices/uploads need it)"} · levels ${JSON.stringify(w.access ?? w.levels ?? {})}`))
+      .catch((e) => console.warn(`[cloud] ${e.message}`));
+    cloud.devices().then((d) => console.log(`[cloud] ${d.length} devices in the inventory`)).catch((e) => console.warn(`[cloud] devices: ${e.message}`));
+  }
 });

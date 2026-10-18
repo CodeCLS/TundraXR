@@ -1,10 +1,54 @@
 package com.tundra.tundraxr.ui.island
 
+import android.util.Log
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.xr.compose.spatial.ExperimentalFollowingSubspaceApi
+import androidx.xr.compose.spatial.FollowingSubspace
+import androidx.xr.compose.subspace.FollowBehavior
+import androidx.xr.compose.subspace.FollowTarget
+import androidx.xr.compose.subspace.TrackedDimensions
+import androidx.xr.runtime.Config
+import androidx.xr.runtime.DeviceTrackingMode
+import androidx.xr.runtime.SessionConfigureSuccess
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Column
+import com.tundra.tundraxr.ui.theme.Motion
+import kotlinx.coroutines.delay
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.wrapContentSize
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
+import androidx.xr.compose.subspace.layout.MovePolicy
+import androidx.xr.compose.subspace.layout.ResizePolicy
+import androidx.xr.compose.subspace.layout.rotate
+import androidx.xr.runtime.math.Vector3
+import com.tundra.tundraxr.R
+import com.tundra.tundraxr.ui.components.Scaled
+import kotlin.math.atan2
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.rememberScrollState
@@ -23,8 +67,7 @@ import androidx.compose.ui.unit.dp
 import androidx.xr.compose.platform.LocalSession
 import androidx.xr.compose.spatial.Subspace
 import androidx.xr.compose.subspace.SpatialPanel
-import androidx.xr.compose.subspace.SpatialRow
-import androidx.xr.compose.subspace.layout.SpatialArrangement
+import androidx.xr.compose.subspace.SpatialBox
 import androidx.xr.compose.subspace.layout.SpatialRoundedCornerShape
 import androidx.xr.compose.subspace.layout.SubspaceModifier
 import androidx.xr.compose.subspace.layout.height
@@ -38,7 +81,11 @@ import androidx.xr.scenecore.scene
 import com.tundra.tundraxr.Actions
 import com.tundra.tundraxr.BuildConfig
 import com.tundra.tundraxr.SessionState
+import com.tundra.tundraxr.ui.bar.VoiceBar
 import com.tundra.tundraxr.ui.components.DotPattern
+import com.tundra.tundraxr.ui.manual.ManualPanel
+import com.tundra.tundraxr.ui.region.RegionPanel
+import com.tundra.tundraxr.ui.answer.AnswerPanel
 import com.tundra.tundraxr.ui.theme.Tundra
 import com.tundra.tundraxr.ui.theme.XrTokens
 
@@ -81,7 +128,7 @@ private fun islandActions(ui: IslandUi, actions: Actions, switchSpace: (() -> Un
     record = actions.record,
     chat = { ui.toggle(FocusedContent.Chat) },
     voiceNote = actions.note,
-    manual = { ui.toggle(FocusedContent.Manual) },
+    manual = { if (actions.isManualOpen()) actions.closeManual() else actions.openManual(null) },
     draft = actions.draft,
     send = actions.send,
     ask = actions.ask,
@@ -89,12 +136,10 @@ private fun islandActions(ui: IslandUi, actions: Actions, switchSpace: (() -> Un
         // A cited page opens only when the engineer asks for it; answers never pop the manual up.
         if (s.manualTarget != null) {
             actions.openSource(s)
-            ui.open(FocusedContent.Manual)
         }
     },
     openGuidance = { g ->
         actions.openManual(g.target)
-        ui.open(FocusedContent.Manual)
     },
     openImage = { img -> ui.open(FocusedContent.Picture(img.file, img.label)) },
     openChat = { ui.open(FocusedContent.Chat) },
@@ -105,9 +150,11 @@ private fun islandActions(ui: IslandUi, actions: Actions, switchSpace: (() -> Un
 )
 
 /**
- * Full Space: the engineer sees the real room (passthrough), with the island floating in front
- * and the focused panel opening beside it, movable and resizable like the old panels.
+ * Full Space: the engineer sees the real room (passthrough). The hands-free bar floats a little
+ * below eye level and stays out of the way; the manual opens beside it when asked for, and
+ * the other panels open from the full controls (tap the bar).
  */
+@OptIn(ExperimentalFollowingSubspaceApi::class)
 @Composable
 fun SpatialIslandWorkspace(state: SessionState, actions: Actions, onRequestHomeSpace: () -> Unit) {
     // Full Space otherwise shows the system's virtual environment; this is AR, so ask for the
@@ -121,24 +168,125 @@ fun SpatialIslandWorkspace(state: SessionState, actions: Actions, onRequestHomeS
     val ui = rememberIslandUi()
     val model = state.toIslandModel(demo = BuildConfig.TUNDRA_DEMO)
     val islandActions = islandActions(ui, actions, onRequestHomeSpace, switchToFull = false)
-    Subspace {
-        SpatialRow(horizontalArrangement = SpatialArrangement.spacedBy(32.dp)) {
-            // The panel wraps the island and follows its size as it opens and closes.
-            SpatialPanel(
-                SubspaceModifier.offset(y = XrTokens.IslandLift).movable(),
-                shape = SpatialRoundedCornerShape(CornerSize(XrTokens.IslandRadiusExpanded)),
-            ) {
-                RepairDynamicIsland(
-                    model,
-                    if (ui.expanded.value) PanelMode.Expanded else PanelMode.Compact,
-                    islandActions,
-                    photoFlash = state.photoFlash,
-                )
+    // The island rides along with the engineer's head, near the top of their view; it needs
+    // the headset's position, so device tracking is switched on first.
+    var tracking by remember { mutableStateOf(false) }
+    LaunchedEffect(session) {
+        val s = session ?: return@LaunchedEffect
+        val result = runCatching { s.configure(Config.Builder(s.config).setDeviceTracking(DeviceTrackingMode.LAST_KNOWN).build()) }
+        Log.i("TundraIsland", "device tracking: ${result.getOrNull() ?: result.exceptionOrNull()}")
+        tracking = result.getOrNull() is SessionConfigureSuccess
+    }
+    val island: @Composable () -> Unit = {
+        if (ui.expanded.value) {
+            RepairDynamicIsland(model, PanelMode.Expanded, islandActions, photoFlash = state.photoFlash)
+        } else {
+            VoiceBar(state, onTap = { ui.expanded.value = true }, onCitation = { actions.showCited() }, onHoldStart = actions.talkStart, onHoldEnd = actions.talkEnd)
+        }
+    }
+    if (tracking && session != null) {
+        // Auto: the island follows the head. Grabbing it to move or resize pins it where it is;
+        // the Auto button (shown only then) puts it back, at its normal size.
+        var pinned by rememberSaveable { mutableStateOf(false) }
+        var placement by rememberSaveable { mutableIntStateOf(0) }
+        // Counts move/resize events; the Auto button shows while they keep coming and a moment after.
+        var handled by remember { mutableIntStateOf(0) }
+        var recentlyHandled by remember { mutableStateOf(false) }
+        LaunchedEffect(handled) {
+            if (handled == 0) return@LaunchedEffect
+            recentlyHandled = true
+            delay(AutoButtonLingerMs)
+            recentlyHandled = false
+        }
+        FollowingSubspace(
+            target = FollowTarget.ArDevice(session),
+            behavior = if (pinned) FollowBehavior.Static else FollowBehavior.Soft(IslandFollowMs),
+            // Follow position, turning and looking up/down (so it's always at the top of the view),
+            // but never roll with a tilted head.
+            dimensions = TrackedDimensions(true, true, true, true, true, false),
+        ) {
+            key(placement) {
+                SpatialPanel(
+                    SubspaceModifier
+                        .offset(y = FollowPanelY, z = -IslandDistance)
+                        // Face the eyes rather than straight ahead, so it doesn't look tilted.
+                        .rotate(Vector3(1f, 0f, 0f), IslandPitchDeg)
+                        .width(BarPanelWidth).height(BarPanelHeight)
+                        .movable(true, MovePolicy.default(false) { pinned = true; handled++ })
+                        .resizable(true, IslandMinSize, IslandMaxSize, false, ResizePolicy.default { pinned = true; handled++ }),
+                ) {
+                    ScaledIsland {
+                        val hover = remember { MutableInteractionSource() }
+                        val hovered by hover.collectIsHoveredAsState()
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+                            // The Auto button hangs below the island in the same column, so it moves down
+                            // as the island grows and can never cover it. It shows while the island is
+                            // being moved or resized, briefly after, and again when looked at while pinned.
+                            Column(Modifier.hoverable(hover), horizontalAlignment = Alignment.CenterHorizontally) {
+                                island()
+                                AnimatedVisibility(
+                                    pinned && (recentlyHandled || hovered),
+                                    enter = fadeIn(tween(Motion.Base)) + expandVertically(tween(Motion.Base), expandFrom = Alignment.Top),
+                                    exit = fadeOut(tween(Motion.Base)) + shrinkVertically(tween(Motion.Base), shrinkTowards = Alignment.Top),
+                                ) {
+                                    AutoButton(onClick = { pinned = false; recentlyHandled = false; placement++ }, modifier = Modifier.padding(top = 10.dp))
+                                }
+                            }
+                        }
+                    }
+                }
             }
-            val focused = ui.focused.value
+        }
+    }
+    Subspace {
+        SpatialBox {
+            if (!tracking) {
+                SpatialPanel(SubspaceModifier.offset(y = BarPanelY).width(BarPanelWidth).height(BarPanelHeight).movable()) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) { island() }
+                }
+            }
+            if (state.showManual) {
+                SpatialPanel(
+                    SubspaceModifier.offset(x = ManualOffsetX, y = ManualOffsetY).width(640.dp).height(780.dp)
+                        .movable().resizable(minimumSize = FocusedMin, maximumSize = FocusedMax),
+                    shape = SpatialRoundedCornerShape(CornerSize(XrTokens.FocusedPanelRadius)),
+                ) {
+                    ManualPanel(state.manual, state.manualTarget, onClose = actions.closeManual)
+                }
+            }
+            val answerId = state.answerPanel
+            val reply = state.chat.firstOrNull { it.id == answerId }
+            if (reply != null) {
+                // Left of the island, where the manual (right) doesn't go.
+                SpatialPanel(
+                    SubspaceModifier.offset(x = -ManualOffsetX, y = ManualOffsetY).width(820.dp).height(860.dp)
+                        .movable().resizable(minimumSize = FocusedMin, maximumSize = FocusedMax),
+                    shape = SpatialRoundedCornerShape(CornerSize(XrTokens.FocusedPanelRadius)),
+                ) {
+                    AnswerPanel(
+                        question = state.chat.lastOrNull { it.fromUser && it.id < reply.id }?.text,
+                        reply = reply,
+                        onAsk = actions.ask,
+                        onClose = actions.closeAnswer,
+                    )
+                }
+            }
+            val region = state.region
+            if (region != null) {
+                // Straight ahead and large, so the device can be boxed precisely.
+                SpatialPanel(
+                    SubspaceModifier.offset(y = (-40).dp, z = 120.dp).width(1180.dp).height(720.dp)
+                        .movable().resizable(minimumSize = FocusedMin, maximumSize = FocusedMax),
+                    shape = SpatialRoundedCornerShape(CornerSize(XrTokens.FocusedPanelRadius)),
+                ) {
+                    RegionPanel(region, onSelect = actions.regionSelect, onClose = actions.regionClose)
+                }
+            }
+            val focused = ui.focused.value?.takeUnless { it == FocusedContent.Manual }
             if (focused != null) {
                 SpatialPanel(
-                    SubspaceModifier.width(880.dp).height(760.dp).movable().resizable(minimumSize = FocusedMin, maximumSize = FocusedMax),
+                    SubspaceModifier.offset(x = -ManualOffsetX, y = ManualOffsetY).width(760.dp).height(760.dp)
+                        .movable().resizable(minimumSize = FocusedMin, maximumSize = FocusedMax),
                     shape = SpatialRoundedCornerShape(CornerSize(XrTokens.FocusedPanelRadius)),
                 ) {
                     FocusedPanel(focused, state, actions, onClose = ui::closeFocused)
@@ -148,47 +296,92 @@ fun SpatialIslandWorkspace(state: SessionState, actions: Actions, onRequestHomeS
     }
 }
 
+/** Grows the island with its panel when the engineer makes the panel bigger. */
+@Composable
+private fun ScaledIsland(content: @Composable () -> Unit) {
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val scale = (maxWidth / BarPanelWidth).coerceIn(0.8f, 2.6f)
+        Scaled(scale) { content() }
+    }
+}
+
+/** Only shown when the island has been moved or resized: puts it back on auto-follow. */
+@Composable
+private fun AutoButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Box(modifier) {
+        Row(
+            Modifier.height(44.dp).clip(RoundedCornerShape(22.dp)).background(Color(0xF22A2925))
+                .border(1.dp, Color(0x33FAF7EC), RoundedCornerShape(22.dp))
+                .clickable(onClick = onClick).padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(painterResource(R.drawable.ic_scan), null, Modifier.size(18.dp), tint = Color(0xFFA9B9E0))
+            Text("Auto", style = MaterialTheme.typography.labelLarge, color = Color(0xFFFAF7EC), modifier = Modifier.padding(start = 8.dp))
+        }
+    }
+}
+
+/** How far in front of the eyes the island floats, and how quickly it catches up with a turn. */
+private val IslandDistance = 1500.dp
+private const val IslandFollowMs = 350
+/** How long the Auto button stays after the last move or resize. */
+private const val AutoButtonLingerMs = 3000L
+/** Island top edge above the eye line when following the head (about 24° up at that distance). */
+private val FollowIslandTopY = 680.dp
+
+private val BarPanelWidth = 600.dp
+private val BarPanelHeight = 520.dp
+private val FollowPanelY = FollowIslandTopY - BarPanelHeight / 2
+/** Tilt toward the eyes: the angle of the island's centre above the eye line. */
+private val IslandPitchDeg = Math.toDegrees(atan2((FollowIslandTopY - 30.dp).value.toDouble(), IslandDistance.value.toDouble())).toFloat()
+private val IslandMinSize = DpVolumeSize(360.dp, 200.dp, 0.dp)
+private val IslandMaxSize = DpVolumeSize(1560.dp, 1400.dp, 0.dp)
+/** The island sits near the top of the view, like a status island; the panel hangs below it. */
+private val IslandTopY = 240.dp
+private val BarPanelY = IslandTopY - BarPanelHeight / 2
+private val ManualOffsetX = 660.dp
+private val ManualOffsetY = (-60).dp
+
 /**
- * Home Space: one window. The island sits at the top centre; a focused panel fills the window
- * below it, with the island folded to its capsule meanwhile. Tapping the capsule closes the
- * focused panel and opens the island again.
+ * Home Space: one window. The manual (when open) fills it, and the hands-free bar sits at the
+ * bottom centre, like it does under the engineer's eye line in Full Space.
  */
 @Composable
 fun HomeSpaceIslandWorkspace(state: SessionState, actions: Actions, canGoFullSpace: Boolean, onRequestFullSpace: () -> Unit) {
     val c = Tundra.colors
     val ui = rememberIslandUi()
     val model = state.toIslandModel(demo = BuildConfig.TUNDRA_DEMO)
-    val base = islandActions(ui, actions, onRequestFullSpace.takeIf { canGoFullSpace }, switchToFull = true)
-    val focused = ui.focused.value
-    val islandActions = if (focused == null) base else IslandActions(
-        expand = ui::closeFocused,
-        collapse = base.collapse, askVoice = base.askVoice, photo = base.photo, record = base.record,
-        screenshot = base.screenshot, upload = base.upload, chat = base.chat, voiceNote = base.voiceNote,
-        manual = base.manual, draft = base.draft, send = base.send, ask = base.ask, source = base.source,
-        openGuidance = base.openGuidance, openImage = base.openImage, openChat = base.openChat,
-        openSession = base.openSession, selectDevice = base.selectDevice,
-        switchSpace = base.switchSpace, switchToFull = base.switchToFull,
-    )
+    val islandActions = islandActions(ui, actions, onRequestFullSpace.takeIf { canGoFullSpace }, switchToFull = true)
+    val focused = ui.focused.value?.takeUnless { it == FocusedContent.Manual }
     Box(Modifier.fillMaxSize().background(c.paper).safeDrawingPadding()) {
         DotPattern()
-        Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
-            Box(
-                Modifier.padding(16.dp)
-                    .then(if (focused == null) Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()) else Modifier),
-            ) {
-                RepairDynamicIsland(
-                    model,
-                    if (ui.expanded.value && focused == null) PanelMode.Expanded else PanelMode.Compact,
-                    islandActions,
-                    photoFlash = state.photoFlash,
-                )
-            }
-            if (focused != null) {
-                FocusedPanel(
-                    focused, state, actions, onClose = ui::closeFocused,
-                    modifier = Modifier.weight(1f).fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 16.dp)
-                        .clip(RoundedCornerShape(XrTokens.FocusedPanelRadius)),
-                )
+        when {
+            focused != null -> FocusedPanel(
+                focused, state, actions, onClose = ui::closeFocused,
+                modifier = Modifier.fillMaxSize().padding(start = 16.dp, end = 16.dp, bottom = 16.dp, top = 84.dp).clip(RoundedCornerShape(XrTokens.FocusedPanelRadius)),
+            )
+            state.answerPanel != null && state.chat.any { it.id == state.answerPanel } -> AnswerPanel(
+                question = state.chat.lastOrNull { it.fromUser && it.id < state.answerPanel }?.text,
+                reply = state.chat.first { it.id == state.answerPanel },
+                onAsk = actions.ask, onClose = actions.closeAnswer,
+                modifier = Modifier.fillMaxSize().padding(start = 16.dp, end = 16.dp, bottom = 16.dp, top = 84.dp),
+            )
+            state.region != null -> RegionPanel(
+                state.region, onSelect = actions.regionSelect, onClose = actions.regionClose,
+                modifier = Modifier.fillMaxSize().padding(start = 16.dp, end = 16.dp, bottom = 16.dp, top = 84.dp),
+            )
+            state.showManual -> ManualPanel(
+                state.manual, state.manualTarget, onClose = actions.closeManual,
+                modifier = Modifier.fillMaxSize().padding(start = 16.dp, end = 16.dp, bottom = 16.dp, top = 84.dp).clip(RoundedCornerShape(XrTokens.FocusedPanelRadius)),
+            )
+        }
+        Box(Modifier.align(Alignment.TopCenter).padding(top = 16.dp)) {
+            if (ui.expanded.value) {
+                Box(Modifier.verticalScroll(rememberScrollState())) {
+                    RepairDynamicIsland(model, PanelMode.Expanded, islandActions, photoFlash = state.photoFlash)
+                }
+            } else {
+                VoiceBar(state, onTap = { ui.expanded.value = true }, onCitation = { actions.showCited() }, onHoldStart = actions.talkStart, onHoldEnd = actions.talkEnd)
             }
         }
     }

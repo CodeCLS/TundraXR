@@ -1,6 +1,7 @@
 package com.tundra.tundraxr.data
 
 import kotlinx.coroutines.delay
+import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 
 /** The Tundra brain as seen from the headset. */
@@ -11,9 +12,14 @@ interface TundraBrain {
     suspend fun manual(manualId: String): Manual
     /** Uploads one capture. Returns the brain's id for it (if any) and its status. */
     suspend fun ingest(sessionId: String, device: Device, item: CaptureItem): Pair<String?, RemoteStatus>
-    suspend fun ask(sessionId: String, device: Device, question: String, session: List<CaptureItem>): BrainAnswer
+    /** [device] scopes the question; null asks the brain in general (fleet, overdue inspections…). */
+    suspend fun ask(sessionId: String, device: Device?, question: String, session: List<CaptureItem>): BrainAnswer
     /** Latest status per remote id, or null when the brain can't be reached. */
     suspend fun statuses(sessionId: String): Map<String, RemoteStatus>?
+    /** Which device a photo (or a region of one) shows, best match first. */
+    suspend fun identify(sessionId: String, image: File): List<ImageMatch>
+    /** Devices matching a name, model, asset tag or serial ("this is the Evita"). */
+    suspend fun findDevices(query: String): List<Device>
 }
 
 /**
@@ -106,7 +112,15 @@ class DemoBrain(private val now: () -> Long = System::currentTimeMillis) : Tundr
         }
     }
 
-    override suspend fun ask(sessionId: String, device: Device, question: String, session: List<CaptureItem>): BrainAnswer {
+    private val imageSearch = DemoImageSearch()
+
+    override suspend fun identify(sessionId: String, image: File): List<ImageMatch> = imageSearch.search(image, listOf(device))
+
+    override suspend fun findDevices(query: String): List<Device> =
+        listOf(device).filter { query.lowercase() in it.name.lowercase() || query.lowercase() in it.assetTag.lowercase() }
+
+    override suspend fun ask(sessionId: String, device: Device?, question: String, session: List<CaptureItem>): BrainAnswer {
+        val device = device ?: this.device
         delay(1800) // long enough to see the island's thinking state
         val q = question.lowercase()
         return when {
