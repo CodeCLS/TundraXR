@@ -15,6 +15,11 @@ class CommandsTest {
     @Test fun headsetSentences() {
         assertEquals(Command.AboutDevice, p("So tell me about this device I want to know what's going on"))
         assertEquals(Command.AboutDevice, p("So tell me about this device is switch devices is it"))
+        assertTrue(p("Tell me about the database") is Command.Question)
+        assertTrue(p("tell me about our maintenance contracts") is Command.Question)
+        assertTrue(p("what's going on in the ICU") is Command.Question)
+        assertEquals(Command.AboutDevice, p("tell me about this machine"))
+        assertEquals(Command.AboutDevice, p("status"))
         assertTrue(p("Take a photo of this device") is Command.Photo)
         assertEquals(devices[1], (p("take a picture of the FT10") as Command.Photo).hint)
         assertEquals(Command.Stop, p("stop", rec = true))

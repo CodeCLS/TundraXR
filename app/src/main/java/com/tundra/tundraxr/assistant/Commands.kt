@@ -41,7 +41,8 @@ private val SHOW_CITED = Regex("""^(show me|open it|show it|open (the|that) page
 private val CANCEL = Regex("""^(cancel|never ?mind|forget it|no thanks?)$""")
 private val SELECT = Regex("""\b(this is|it'?s|switch to|change to|use|select|working on)\b""")
 private val FILLER = Regex("""^((so|ok|okay|um|uh|hmm|and|well|right|alright|hey|please|yeah|now)\s+)+""")
-private val ABOUT = Regex("""\b(tell me about|about this (device|machine|one)|what'?s going on|what is going on|what is this|what'?s this|status|overview|summary|info on|information (about|on)|details (about|on|of))\b""")
+// Only about the device in front of the engineer; "tell me about the database" is a question.
+private val ABOUT = Regex("""\btell me about (this|that|the|our) (device|machine|unit|one|equipment)\b|\btell me about (it|this|that)$|\babout this (device|machine|unit|one)\b|\bwhat'?s going on with (this|it|the (device|machine))\b|\bwhat is going on with (this|it|the (device|machine))\b|^(device )?(status|overview|summary)$|\b(status|overview|summary|details|info) (of|on|about|for) (this|the|that) (device|machine|unit)\b""")
 private val QUESTION_HOW = Regex("""^(how|where|when|why|which)\b""")
 private val QUESTION_START = Regex("""^(how|what|where|when|why|which|who|is|are|can|could|does|do|did|should|would|will|tell|explain|show|find|list|give|walk|help|what's|where's|how's)\b""")
 
