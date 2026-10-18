@@ -1,0 +1,26 @@
+<!-- @dsCard group="Components" viewport="700x360" name="Data" subtitle="Table, DefinitionList, Timeline, StatTile" -->
+<!doctype html><html lang="en"><head><meta charset="utf-8"><link rel="stylesheet" href="../../styles.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script>
+<style>body{margin:0;padding:20px;background:var(--bg-page);font-family:var(--font-sans)}.row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.col{display:flex;flex-direction:column;gap:14px}.lbl{font:var(--weight-medium) var(--text-label)/1 var(--font-sans);letter-spacing:var(--ls-label);text-transform:uppercase;color:var(--text-muted)}</style>
+</head><body><div id="root"></div>
+<script type="text/babel">
+const { Table, DefinitionList, Timeline, StatTile, Badge, Card } = window.TundraHealthDesignSystem_1734d4;
+const rows=[{tag:'AST-441902',name:'Somatom X.cite',state:'In service',tone:'ok',cost:'$18,420'},{tag:'AST-330218',name:'Alaris 8100 pump',state:'PM overdue',tone:'warn',cost:'$2,110'},{tag:'AST-118740',name:'Servo-u ventilator',state:'Down',tone:'down',cost:'$9,880'}];
+function Demo(){return(<div className="col" style={{gap:16}}>
+  <div className="row" style={{gap:12,flexWrap:'nowrap'}}>
+    <StatTile style={{flex:1}} label="Contract spend saved" value="18.4" unit="%" delta="4.2%" deltaTone="ok" hint="vs. last FY"/>
+    <StatTile style={{flex:1}} label="Calls caught as operator error" value="57" unit="%" hint="last 90 days"/>
+    <StatTile style={{flex:1}} label="Mean time to repair" value="3.2" unit="days" delta="0.6" deltaTone="ok"/>
+  </div>
+  <Card padded={false}><Table dense columns={[{key:'tag',header:'Asset tag',mono:true,width:130},{key:'name',header:'Device'},{key:'state',header:'State',render:r=><Badge tone={r.tone} dot>{r.state}</Badge>},{key:'cost',header:'YTD cost',mono:true,align:'right'}]} rows={rows}/></Card>
+  <div className="row" style={{gap:24,alignItems:'flex-start',flexWrap:'nowrap'}}>
+    <DefinitionList style={{flex:1}} columns={2} items={[{label:'Manufacturer',value:'Siemens Healthineers'},{label:'Serial',value:'SN-88213-C',mono:true},{label:'Installed',value:'11 Mar 2019',mono:true},{label:'Contract',value:'Full service · exp. 30 Jun 2027'}]}/>
+    <div style={{flex:1}}><Timeline events={[{title:'Corrective repair',date:'14 Feb 2026',tone:'down',icon:'wrench',description:'Gantry drive belt replaced.',source:'CMMS · WO-88412'},{title:'PM completed',date:'02 Jan 2026',tone:'ok',icon:'check',source:'Vendor report · SIE-2201'}]}/></div>
+  </div>
+</div>)}
+ReactDOM.createRoot(document.getElementById('root')).render(<Demo />);
+</script>
+</body></html>

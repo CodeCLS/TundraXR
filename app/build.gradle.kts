@@ -60,7 +60,9 @@ dependencies {
     implementation(libs.androidx.camera.camera2)
     implementation(libs.androidx.camera.lifecycle)
     implementation(libs.androidx.camera.video)
-    implementation(libs.extensions1.xr)
+    // Stub jar: the real implementation ships in the headset's system image. Bundling it in the
+    // APK shadows the system copy, every call throws "Stub!", and the XR session never starts.
+    compileOnly(libs.extensions1.xr)
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug builds only: a gallery of island states for checking the UI without a headset. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <activity
+            android:name=".IslandGalleryActivity"
+            android:exported="true"
+            android:theme="@style/Theme.TundraXR" />
+    </application>
+</manifest>

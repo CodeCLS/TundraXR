@@ -1,0 +1,58 @@
+<!-- @dsCard group="Tundra App" viewport="1440x900" name="Tundra app" subtitle="Triage inbox, fleet, device record and contracts" -->
+<!-- @startingPoint section="Tundra App" subtitle="Full app shell with sidebar, triage inbox and device records" viewport="1440x900" -->
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Tundra — app UI kit</title>
+<link rel="stylesheet" href="../../styles.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script>
+<script src="./data.js"></script>
+<style>html,body,#root{height:100%;margin:0}#root{min-width:1080px}body{background:var(--bg-page)}</style>
+</head><body><div id="root"></div>
+<script type="text/babel" src="./AppShell.jsx"></script>
+<script type="text/babel" src="./FleetScreen.jsx"></script>
+<script type="text/babel" src="./DeviceScreen.jsx"></script>
+<script type="text/babel" src="./TriageScreen.jsx"></script>
+<script type="text/babel" src="./ContractsScreen.jsx"></script>
+<script type="text/babel" src="./AnalyticsScreen.jsx"></script>
+<script type="text/babel">
+const { Button, Breadcrumbs, IconButton } = window.TundraHealthDesignSystem_1734d4;
+/* A failing screen must not take the shell down with it. */
+class Boundary extends React.Component {
+  constructor(p){super(p);this.state={failed:false}}
+  static getDerivedStateFromError(){return{failed:true}}
+  componentDidCatch(e){console.error('Screen failed to render:',e)}
+  render(){
+    if(!this.state.failed) return this.props.children;
+    return <div style={{padding:'12px 14px',border:'1px dashed var(--line-300)',borderRadius:'var(--radius-md)',background:'var(--paper-100)',font:'11.5px/1.5 var(--font-mono)',color:'var(--text-secondary)'}}>This screen could not render. Navigation still works.</div>;
+  }
+}
+function App(){
+  const [view,setView]=React.useState('inbox');
+  const [device,setDevice]=React.useState(null);
+  const open=(d)=>{setDevice(d);setView('device')};
+  const meta={
+    inbox:{title:'Triage inbox',subtitle:'3 open calls · 2 waiting on the operator'},
+    fleet:{title:'Fleet',subtitle:'6,412 devices across 4 sites'},
+    device:{title:(device||window.TUNDRA_DATA.devices[0]).name,subtitle:(device||window.TUNDRA_DATA.devices[0]).id},
+    contracts:{title:'Contracts & SLAs',subtitle:'4 vendors · $850,700 annual'},
+    reports:{title:'Analytics',subtitle:'Spend, downtime and SLA attainment across the fleet'},
+  }[view]||{title:'Analytics',subtitle:'Scheduled and ad-hoc'};
+  return (
+    <AppShell view={view} setView={setView} title={meta.title} subtitle={meta.subtitle}
+      breadcrumb={view==='device' && <div style={{marginBottom:4}}><Breadcrumbs items={[{label:'Fleet',href:'#'},{label:(device||window.TUNDRA_DATA.devices[0]).dept,href:'#'},(device||window.TUNDRA_DATA.devices[0]).id]}/></div>}
+      actions={view==='device'
+        ? <><IconButton icon="star" label="Watch"/><Button size="sm" variant="secondary" iconLeft="share">Share</Button><Button size="sm" variant="accent" iconLeft="sparkles">Ask about this device</Button></>
+        : <Button size="sm" variant="accent" iconLeft="sparkles">Ask Tundra</Button>}>
+      {view==='inbox' && <Boundary><TriageScreen onOpenDevice={()=>open(window.TUNDRA_DATA.devices[2])}/></Boundary>}
+      {view==='fleet' && <Boundary><FleetScreen onOpen={open}/></Boundary>}
+      {view==='device' && <Boundary><DeviceScreen device={device}/></Boundary>}
+      {view==='contracts' && <Boundary><ContractsScreen/></Boundary>}
+      {view==='reports' && <Boundary><AnalyticsScreen/></Boundary>}
+      {['cmms','invoices','email'].includes(view) && <Boundary><FleetScreen onOpen={open}/></Boundary>}
+    </AppShell>
+  );
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body></html>

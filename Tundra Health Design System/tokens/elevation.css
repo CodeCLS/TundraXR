@@ -1,0 +1,13 @@
+:root{
+  /* Shadows are near-invisible; structure comes from hairlines. */
+  --shadow-none:none;
+  --shadow-hairline:0 0 0 1px var(--line-100);
+  --shadow-xs:0 1px 2px rgba(15,17,19,.045);
+  --shadow-sm:0 1px 2px rgba(15,17,19,.05);
+  --shadow-md:0 1px 2px rgba(15,17,19,.04),0 4px 12px rgba(15,17,19,.06);
+  --shadow-lg:0 2px 4px rgba(15,17,19,.04),0 12px 32px rgba(15,17,19,.10);
+  --shadow-inset-top:inset 0 1px 0 rgba(255,255,255,.6);
+  --shadow-raised:inset 0 1px 0 rgba(248,242,220,.12),0 1px 2px rgba(25,25,23,.14);
+  --ring-focus:0 0 0 2px var(--paper-050),0 0 0 4px rgba(76,99,182,.30);
+  --ring-danger:0 0 0 2px var(--paper-050),0 0 0 4px rgba(169,80,60,.36);
+}

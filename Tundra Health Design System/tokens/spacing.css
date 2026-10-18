@@ -1,0 +1,27 @@
+:root{
+  --space-0:0px;
+  --space-1:4px;
+  --space-2:8px;
+  --space-3:12px;
+  --space-4:16px;
+  --space-5:20px;
+  --space-6:24px;
+  --space-8:32px;
+  --space-10:40px;
+  --space-12:48px;
+  --space-16:64px;
+  --space-20:80px;
+  --space-24:96px;
+  --space-32:128px;
+
+  --gutter-page:32px;
+  --gutter-page-lg:64px;
+  --measure-prose:64ch; /* @kind spacing */
+  --width-content:1160px; /* @kind spacing */
+  --width-narrow:760px; /* @kind spacing */
+  --sidebar-width:248px; /* @kind spacing */
+  --topbar-height:52px;
+  --control-height-sm:32px;
+  --control-height:36px;
+  --control-height-lg:40px;
+}

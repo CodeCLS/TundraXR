@@ -1,0 +1,9 @@
+:root{
+  --radius-xs:4px;
+  --radius-sm:6px;
+  --radius-md:8px;   /* controls — shadcn rounded-md */
+  --radius-lg:12px;  /* cards — shadcn rounded-xl */
+  --radius-xl:16px;  /* modals */
+  --radius-2xl:24px;
+  --radius-pill:999px;
+}

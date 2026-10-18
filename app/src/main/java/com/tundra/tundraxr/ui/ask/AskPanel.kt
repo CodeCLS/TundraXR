@@ -48,7 +48,11 @@ import com.tundra.tundraxr.SessionState
 import com.tundra.tundraxr.VoiceTarget
 import com.tundra.tundraxr.data.ChatMessage
 import com.tundra.tundraxr.data.Source
+import com.tundra.tundraxr.ui.components.AskInput
+import com.tundra.tundraxr.ui.components.ChatBubble
 import com.tundra.tundraxr.ui.components.Chip
+import com.tundra.tundraxr.ui.components.CitationChip
+import com.tundra.tundraxr.ui.components.ControlShape
 import com.tundra.tundraxr.ui.components.DotPattern
 import com.tundra.tundraxr.ui.components.IconCircle
 import com.tundra.tundraxr.ui.components.MonoLabel
@@ -57,7 +61,7 @@ import com.tundra.tundraxr.ui.components.Waveform
 import com.tundra.tundraxr.ui.theme.Tundra
 
 /** Starter questions per device; answers come from that device's OEM manual. */
-private fun suggestionsFor(deviceId: String?) = when (deviceId) {
+internal fun suggestionsFor(deviceId: String?) = when (deviceId) {
     "pb980" -> listOf("How do I run SST?", "Preventive maintenance intervals?", "What does a high circuit pressure alarm mean?", "How do I run EST?")
     "pm100n" -> listOf("How do I replace the battery?", "Performance verification with the SRC-MAX", "What does an error code mean?", "Spare parts list")
     "ft10" -> listOf("Electrical safety leakage current test", "How do I calibrate the generator?", "Troubleshooting error codes", "Preventive maintenance")
@@ -84,7 +88,7 @@ fun AskPanel(
                 .padding(horizontal = if (size.compactWidth) 16.dp else 28.dp, vertical = if (size.compactHeight) 12.dp else 28.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(painterResource(R.drawable.ic_sparkle), null, Modifier.size(20.dp), tint = c.ink)
+                Icon(painterResource(R.drawable.ic_sparkle), null, Modifier.size(20.dp), tint = c.accent)
                 Text(
                     "Ask Tundra",
                     style = if (size.compactWidth || size.compactHeight) MaterialTheme.typography.titleMedium else MaterialTheme.typography.headlineSmall,
@@ -115,11 +119,21 @@ fun AskPanel(
                     state = listState,
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
-                    items(state.chat, key = { it.id }) { Message(it, onSource, size) }
+                    items(state.chat, key = { it.id }) {
+                        ChatBubble(it, onSource, maxWidth = (size.width * 0.8f).coerceAtMost(520.dp), compact = size.compactWidth)
+                    }
                 }
             }
             Spacer(Modifier.height(if (size.compactHeight) 8.dp else 16.dp))
-            InputBar(state, onDraftChange, onSend, onMic)
+            AskInput(
+                draft = state.askDraft,
+                listening = state.listeningFor == VoiceTarget.Ask,
+                liveTranscript = state.liveTranscript,
+                voiceError = state.voiceError,
+                onDraftChange = onDraftChange,
+                onSend = onSend,
+                onMic = onMic,
+            )
         }
     }
 }
@@ -143,100 +157,6 @@ private fun Suggestions(suggestions: List<String>, onAsk: (String) -> Unit, size
         Spacer(Modifier.height(18.dp))
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             suggestions.forEach { Chip(it, onClick = { onAsk(it) }) }
-        }
-    }
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun Message(m: ChatMessage, onSource: (Source) -> Unit, size: PanelSize) {
-    val c = Tundra.colors
-    if (m.fromUser) {
-        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
-            Text(
-                m.text,
-                style = MaterialTheme.typography.bodyLarge,
-                color = c.inkInverse,
-                modifier = Modifier.widthIn(max = (size.width * 0.8f).coerceAtMost(520.dp)).clip(RoundedCornerShape(18.dp, 18.dp, 4.dp, 18.dp)).background(c.ink).padding(horizontal = 18.dp, vertical = 12.dp),
-            )
-        }
-    } else {
-        Column(
-            Modifier.fillMaxWidth().clip(PanelShape).background(c.raised).border(1.dp, c.border, PanelShape)
-                .padding(if (size.compactWidth) 14.dp else 20.dp).animateContentSize(),
-        ) {
-            MonoLabel(if (m.streaming) "Tundra · thinking" else "Tundra", small = true)
-            if (m.text.isEmpty()) {
-                Waveform(Modifier.padding(top = 10.dp), color = c.inkMuted)
-            } else {
-                Text(m.text, style = MaterialTheme.typography.bodyLarge, color = c.ink, modifier = Modifier.padding(top = 6.dp))
-            }
-            if (m.sources.isNotEmpty()) {
-                Spacer(Modifier.height(14.dp))
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    m.sources.forEach { s ->
-                        Chip(
-                            s.label,
-                            prefix = s.kind.label,
-                            onClick = s.manualTarget?.let { { onSource(s) } },
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun InputBar(state: SessionState, onDraftChange: (String) -> Unit, onSend: () -> Unit, onMic: () -> Unit) {
-    val c = Tundra.colors
-    val listening = state.listeningFor == VoiceTarget.Ask
-    Row(
-        Modifier.fillMaxWidth().heightIn(min = 64.dp).clip(CircleShape).background(c.raised).border(1.dp, if (listening) c.ink else c.border, CircleShape).padding(start = 24.dp, end = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(Modifier.weight(1f).padding(vertical = 14.dp)) {
-            if (listening) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Waveform()
-                    Text(
-                        state.liveTranscript.ifEmpty { "Listening…" },
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = c.ink,
-                        modifier = Modifier.padding(start = 14.dp),
-                        maxLines = 2,
-                    )
-                }
-            } else {
-                if (state.askDraft.isEmpty()) {
-                    val error = state.voiceError
-                    Text(
-                        error ?: "Ask about this device",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = if (error != null) c.record else c.inkMuted,
-                        maxLines = 1,
-                    )
-                }
-                BasicTextField(
-                    value = state.askDraft,
-                    onValueChange = onDraftChange,
-                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = c.ink),
-                    cursorBrush = SolidColor(c.ink),
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                    keyboardActions = KeyboardActions(onSend = { onSend() }),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-        }
-        IconCircle(R.drawable.ic_mic, if (listening) "Stop listening" else "Ask by voice", onMic, selected = listening, size = 52.dp)
-        if (state.askDraft.isNotBlank() && !listening) {
-            Box(
-                Modifier.padding(start = 4.dp).size(52.dp).clip(CircleShape).background(c.ink).clickable(onClick = onSend),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(painterResource(R.drawable.ic_arrow_up), "Send", Modifier.size(22.dp), tint = c.inkInverse)
-            }
         }
     }
 }

@@ -16,3 +16,6 @@ local.properties
 .kotlin
 /.idea
 server/manuals/*.pdf
+
+# Design-system mood board and reference screenshots: third-party images, kept local only.
+/Tundra Health Design System/uploads/

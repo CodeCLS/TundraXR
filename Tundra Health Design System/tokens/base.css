@@ -1,0 +1,20 @@
+/* Minimal global base. Tundra ships tokens, not a utility framework. */
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-size-adjust:100%}
+body{margin:0;background:var(--bg-page);color:var(--text-body);font-family:var(--font-sans);font-size:var(--text-size-body);line-height:var(--lh-body);letter-spacing:var(--ls-body);font-weight:var(--weight-regular)}
+h1,h2,h3,h4,h5,h6{margin:0;color:var(--text-display);font-weight:var(--weight-medium);text-wrap:balance}
+p{margin:0;text-wrap:pretty}
+a{color:var(--text-link);text-decoration:none;border-bottom:1px solid color-mix(in oklab,var(--text-link) 30%,transparent);transition:var(--transition-control)}
+a:hover{color:var(--text-link-hover);border-bottom-color:color-mix(in oklab,var(--text-link) 60%,transparent)}
+code,kbd,pre,samp{font-family:var(--font-mono);font-size:var(--text-mono)}
+::selection{background:var(--cream-200);color:var(--ink-900)}
+:focus-visible{outline:none;box-shadow:var(--ring-focus);border-radius:var(--radius-sm)}
+hr{border:0;border-top:1px solid var(--border-hairline);margin:var(--space-8) 0}
+.tundra-dots{background-image:var(--pattern-dots);background-size:var(--dot-gap) var(--dot-gap);background-position:center}
+.tundra-grain::after{content:"";position:absolute;inset:0;pointer-events:none;background-image:var(--grain-url);opacity:var(--grain-opacity);mix-blend-mode:multiply}
+@keyframes tundra-fade-up{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+@keyframes tundra-scale-in{from{opacity:0;transform:scale(.97)}to{opacity:1;transform:none}}
+@keyframes tundra-fade{from{opacity:0}to{opacity:1}}
+@keyframes tundra-draw{from{stroke-dashoffset:var(--draw-len,1000)}to{stroke-dashoffset:0}}
+@keyframes tundra-rise{from{transform:scaleY(0)}to{transform:scaleY(1)}}
+@media (prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;transition-duration:.01ms!important}}

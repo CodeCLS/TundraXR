@@ -1,0 +1,16 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><link rel="stylesheet" href="styles.css">
+<style>html,body{margin:0;padding:0;width:1280px;height:854px;overflow:hidden}
+.wrap{display:flex;width:1280px;height:854px}
+.main{position:relative;flex:0 0 75%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:56px;background:var(--stone-700);overflow:hidden}
+.dots{position:absolute;inset:0;background-image:var(--pattern-dots-inverse);background-size:44px 44px}
+.grain{position:absolute;inset:0;background-image:var(--grain-url);opacity:.5;mix-blend-mode:overlay}
+.mark{position:relative;width:300px}
+.name{position:relative;font:var(--weight-medium) 152px/1 var(--font-sans);letter-spacing:-.045em;color:var(--cream-100)}
+.strip{flex:1;display:flex;flex-direction:column}
+.strip div{flex:1}
+</style></head><body>
+<div class="wrap">
+<div class="main"><div class="dots"></div><div class="grain"></div><img class="mark" src="assets/tundra-mark.svg" alt=""><div class="name">Tundra</div></div>
+<div class="strip"><div style="background:var(--cream-100)"></div><div style="background:var(--amber-500)"></div><div style="background:var(--cobalt-500)"></div><div style="background:var(--rust-500)"></div></div>
+</div>
+</body></html>

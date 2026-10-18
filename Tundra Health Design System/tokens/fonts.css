@@ -1,0 +1,8 @@
+/* Tundra webfonts. No binaries were supplied with the brand assets, so the
+   closest Google Fonts equivalents are loaded from the Google CDN.
+   Geist / Geist Mono — neo-grotesque, high x-height, engineering-neutral. */
+@import url("https://fonts.googleapis.com/css2?family=Geist:wght@300..700&family=Geist+Mono:wght@400..600&display=swap");
+
+/* If the webfonts cannot load (offline, or a published bundle where the Google
+   Fonts binaries did not resolve), the stacks in tokens/typography.css fall back
+   to Helvetica Neue / system mono — metrics are close enough that layout holds. */

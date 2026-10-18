@@ -67,7 +67,11 @@ import com.tundra.tundraxr.data.CaptureKind
 import com.tundra.tundraxr.data.Device
 import com.tundra.tundraxr.data.SyncState
 import com.tundra.tundraxr.formatClock
+import com.tundra.tundraxr.ui.components.Badge
+import com.tundra.tundraxr.ui.components.BadgeTone
 import com.tundra.tundraxr.ui.components.Chip
+import com.tundra.tundraxr.ui.components.decodeThumb
+import com.tundra.tundraxr.ui.components.MonoText
 import com.tundra.tundraxr.ui.components.DotPattern
 import com.tundra.tundraxr.ui.components.Hairline
 import com.tundra.tundraxr.ui.components.MonoLabel
@@ -136,11 +140,12 @@ private fun Header(state: SessionState, size: PanelSize) {
         Spacer(Modifier.weight(1f))
         if (state.isRecording) {
             StatusDot(Tundra.colors.record, pulsing = true)
-            MonoLabel("Rec ${formatClock(state.recordingSec)}", Modifier.padding(start = 8.dp), color = Tundra.colors.record)
+            MonoLabel("Rec", Modifier.padding(start = 8.dp), color = Tundra.colors.downFg)
+            MonoText(formatClock(state.recordingSec), Modifier.padding(start = 6.dp), color = Tundra.colors.downFg, small = true)
         } else {
             val (color, text) = when (state.brainOnline) {
-                true -> Tundra.colors.synced to if (size.compactWidth) "Brain" else "Laptop brain"
-                false -> Tundra.colors.record to "Offline"
+                true -> Tundra.colors.okDot to if (size.compactWidth) "Brain" else "Laptop brain"
+                false -> Tundra.colors.downDot to "Offline"
                 null -> Tundra.colors.ring to "Connecting"
             }
             StatusDot(color)
@@ -156,9 +161,10 @@ private fun DocumentationHeader(state: SessionState) {
         Spacer(Modifier.weight(1f))
         val error = state.voiceError
         if (error != null) {
-            MonoLabel(error, color = Tundra.colors.record, small = true)
+            MonoLabel(error, color = Tundra.colors.downFg, small = true)
         } else if (state.captures.isNotEmpty()) {
-            MonoLabel("${state.syncedCount}/${state.captures.size} in brain", small = true)
+            MonoText("${state.syncedCount}/${state.captures.size}", color = Tundra.colors.inkMuted, small = true)
+            MonoLabel("in brain", Modifier.padding(start = 6.dp), small = true)
         }
     }
 }
@@ -166,11 +172,11 @@ private fun DocumentationHeader(state: SessionState) {
 @Composable
 private fun Identifying(size: PanelSize) {
     Row(
-        Modifier.fillMaxWidth().clip(PanelShape).background(Tundra.colors.raised).border(1.dp, Tundra.colors.border, PanelShape)
+        Modifier.fillMaxWidth().clip(PanelShape).background(Tundra.colors.raised).border(1.dp, Tundra.colors.borderControl, PanelShape)
             .padding(if (size.compactHeight || size.compactWidth) 16.dp else 28.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        CircularProgressIndicator(Modifier.size(22.dp), color = Tundra.colors.ink, strokeWidth = 2.dp)
+        CircularProgressIndicator(Modifier.size(22.dp), color = Tundra.colors.accentDot, strokeWidth = 1.5.dp)
         Column(Modifier.padding(start = 16.dp)) {
             MonoLabel("Identifying device")
             Text("Look at the asset tag or the device label", style = MaterialTheme.typography.bodyLarge, color = Tundra.colors.ink)
@@ -212,7 +218,7 @@ private fun DevicePicker(devices: List<Device>, onSelect: (Device) -> Unit, labe
 private fun DeviceCard(device: Device, devices: List<Device>, onSelect: (Device) -> Unit, size: PanelSize) {
     val c = Tundra.colors
     val compact = size.compactWidth
-    Column(Modifier.fillMaxWidth().clip(PanelShape).background(c.raised).border(1.dp, c.border, PanelShape).padding(if (compact) 18.dp else 28.dp)) {
+    Column(Modifier.fillMaxWidth().clip(PanelShape).background(c.raised).border(1.dp, c.borderControl, PanelShape).padding(if (compact) 18.dp else 28.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             MonoLabel("${device.manufacturer} · ${device.category}", Modifier.weight(1f))
             DevicePicker(devices, onSelect, if (compact) "Change" else "Not this device?")
@@ -231,11 +237,11 @@ private fun DeviceCard(device: Device, devices: List<Device>, onSelect: (Device)
             horizontalArrangement = Arrangement.spacedBy(if (compact) 20.dp else 36.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Fact("Asset", device.assetTag)
+            Fact("Asset", device.assetTag, mono = true)
             Fact("Location", device.location)
-            Fact("Serial", device.serial)
-            Fact("Last PM", device.lastPm)
-            Fact("Open WO", device.openWorkOrders.toString())
+            Fact("Serial", device.serial, mono = true)
+            Fact("Last PM", device.lastPm, mono = true)
+            Fact("Open WO", device.openWorkOrders.toString(), mono = true)
         }
     }
 }
@@ -245,7 +251,7 @@ private fun DeviceCard(device: Device, devices: List<Device>, onSelect: (Device)
 private fun DeviceStrip(device: Device, devices: List<Device>, onSelect: (Device) -> Unit) {
     val c = Tundra.colors
     Row(
-        Modifier.fillMaxWidth().clip(PanelShape).background(c.raised).border(1.dp, c.border, PanelShape).padding(horizontal = 16.dp, vertical = 10.dp),
+        Modifier.fillMaxWidth().clip(PanelShape).background(c.raised).border(1.dp, c.borderControl, PanelShape).padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
@@ -257,10 +263,12 @@ private fun DeviceStrip(device: Device, devices: List<Device>, onSelect: (Device
 }
 
 @Composable
-private fun Fact(label: String, value: String) {
+private fun Fact(label: String, value: String, mono: Boolean = false) {
     Column {
         MonoLabel(label, small = true)
-        Text(value, style = MaterialTheme.typography.bodyLarge, color = Tundra.colors.ink, modifier = Modifier.padding(top = 4.dp))
+        // Identifiers and numbers are set in mono, everything else in the body face.
+        if (mono) MonoText(value, Modifier.padding(top = 4.dp))
+        else Text(value, style = MaterialTheme.typography.bodyLarge, color = Tundra.colors.ink, modifier = Modifier.padding(top = 4.dp))
     }
 }
 
@@ -329,12 +337,15 @@ private fun CaptureRow(item: CaptureItem, compact: Boolean, modifier: Modifier =
         CaptureKind.Note -> "Voice note" to item.transcript
     }
     Row(
-        modifier.fillMaxWidth().clip(PanelShape).background(c.raised).border(1.dp, c.border, PanelShape).padding(if (compact) 12.dp else 16.dp),
+        modifier.fillMaxWidth().clip(PanelShape).background(c.raised).border(1.dp, c.borderControl, PanelShape).padding(if (compact) 12.dp else 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Thumb(item, if (compact) DpSize(52.dp, 42.dp) else DpSize(72.dp, 56.dp))
         Column(Modifier.padding(horizontal = if (compact) 12.dp else 18.dp).weight(1f)) {
-            MonoLabel("$kind · ${item.at}", small = true)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                MonoLabel(kind, small = true)
+                MonoText(item.at, Modifier.padding(start = 8.dp), color = c.inkMuted, small = true)
+            }
             Text(title, style = MaterialTheme.typography.bodyLarge, color = c.ink, maxLines = 3, modifier = Modifier.padding(top = 2.dp))
             // Narrow rows: status goes under the title instead of fighting it for width.
             if (compact) Box(Modifier.padding(top = 6.dp)) { SyncBadge(item.sync, item.detail) }
@@ -368,45 +379,30 @@ private fun Thumb(item: CaptureItem, size: DpSize) {
     }
 }
 
-private fun decodeThumb(path: String): ImageBitmap? = runCatching {
-    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-    BitmapFactory.decodeFile(path, bounds)
-    var sample = 1
-    while (bounds.outWidth / (sample * 2) >= 160) sample *= 2
-    BitmapFactory.decodeFile(path, BitmapFactory.Options().apply { inSampleSize = sample })?.asImageBitmap()
-}.getOrNull()
-
 @Composable
-private fun SyncBadge(sync: SyncState, detail: String?) {
+internal fun SyncBadge(sync: SyncState, detail: String?) {
     val c = Tundra.colors
+    // The design system's Badge: neutral while sending, cobalt while the agent analyzes,
+    // moss once stored, rust on failure.
     AnimatedContent(sync to detail, label = "sync") { (s, d) ->
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            when (s) {
-                SyncState.Sending, SyncState.Analyzing -> {
-                    CircularProgressIndicator(Modifier.size(14.dp), color = c.inkMuted, strokeWidth = 1.5.dp)
-                    MonoLabel(d ?: if (s == SyncState.Sending) "Sending" else "Analyzing", Modifier.padding(start = 8.dp), small = true)
-                }
-                SyncState.InBrain, SyncState.Analyzed -> {
-                    Icon(painterResource(if (s == SyncState.Analyzed) R.drawable.ic_sparkle else R.drawable.ic_check), null, Modifier.size(16.dp), tint = c.synced)
-                    MonoLabel(d ?: "In brain", Modifier.padding(start = 6.dp), color = c.synced, small = true)
-                }
-                SyncState.Failed -> {
-                    StatusDot(c.record)
-                    MonoLabel(d ?: "Failed", Modifier.padding(start = 8.dp), color = c.record, small = true)
-                }
-            }
+        when (s) {
+            SyncState.Sending -> Badge(d ?: "Sending", tone = BadgeTone.Neutral, dot = true)
+            SyncState.Analyzing -> Badge(d ?: "Analyzing", tone = BadgeTone.Info, dot = true)
+            SyncState.InBrain -> Badge(d ?: "In brain", tone = BadgeTone.Ok, dot = true)
+            SyncState.Analyzed -> Badge(d ?: "Analyzed", tone = BadgeTone.Info)
+            SyncState.Failed -> Badge(d ?: "Failed", tone = BadgeTone.Down, dot = true)
         }
     }
 }
 
 /** Brief white flash over the panel as shutter feedback. */
 @Composable
-private fun PhotoFlash(trigger: Long) {
+internal fun PhotoFlash(trigger: Long, modifier: Modifier = Modifier.fillMaxSize()) {
     val alpha = remember { Animatable(0f) }
     LaunchedEffect(trigger) {
         if (trigger == 0L) return@LaunchedEffect
         alpha.snapTo(0.55f)
         alpha.animateTo(0f, tween(450))
     }
-    Box(Modifier.fillMaxSize().graphicsLayer { this.alpha = alpha.value }.background(Color.White))
+    Box(modifier.graphicsLayer { this.alpha = alpha.value }.background(Color.White))
 }

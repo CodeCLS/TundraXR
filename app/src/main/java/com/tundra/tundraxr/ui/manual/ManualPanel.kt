@@ -83,7 +83,9 @@ import com.tundra.tundraxr.data.Manual
 import com.tundra.tundraxr.data.ManualPage
 import com.tundra.tundraxr.data.ManualTarget
 import com.tundra.tundraxr.ui.components.IconCircle
+import com.tundra.tundraxr.ui.components.ControlShape
 import com.tundra.tundraxr.ui.components.MonoLabel
+import com.tundra.tundraxr.ui.components.MonoText
 import com.tundra.tundraxr.ui.components.PanelShape
 import com.tundra.tundraxr.ui.theme.Tundra
 import kotlinx.coroutines.Dispatchers
@@ -196,7 +198,7 @@ private fun ZoomControls(zoom: Float, onZoom: (Float) -> Unit, small: Boolean) {
     val c = Tundra.colors
     val button = if (small) 40.dp else 44.dp
     Row(
-        Modifier.padding(horizontal = 6.dp).clip(CircleShape).border(1.dp, c.border, CircleShape),
+        Modifier.padding(horizontal = 6.dp).clip(ControlShape).border(1.dp, c.borderControl, ControlShape),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         IconCircle(R.drawable.ic_minus, "Zoom out", { onZoom(ZoomSteps.lastOrNull { it < zoom - 0.01f } ?: 1f) }, size = button)
@@ -216,15 +218,15 @@ private fun ZoomControls(zoom: Float, onZoom: (Float) -> Unit, small: Boolean) {
 private fun Pointer(target: ManualTarget, size: PanelSize) {
     val c = Tundra.colors
     Row(
-        Modifier.fillMaxWidth().background(c.ink).padding(horizontal = if (size.compactWidth) 16.dp else 28.dp, vertical = if (size.compactHeight) 8.dp else 12.dp),
+        Modifier.fillMaxWidth().background(c.accentSurface).padding(horizontal = if (size.compactWidth) 16.dp else 28.dp, vertical = if (size.compactHeight) 8.dp else 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(painterResource(R.drawable.ic_sparkle), null, Modifier.size(16.dp), tint = c.inkInverse)
-        MonoLabel("Page ${target.page}", Modifier.padding(start = 10.dp), color = c.inkInverse.copy(alpha = 0.7f), small = true)
+        Icon(painterResource(R.drawable.ic_sparkle), null, Modifier.size(18.dp), tint = c.accent)
+        MonoText("p.${target.page}", Modifier.padding(start = 10.dp), color = c.accent, small = true)
         Text(
             target.reason,
             style = MaterialTheme.typography.bodyMedium,
-            color = c.inkInverse,
+            color = c.ink,
             modifier = Modifier.padding(start = 12.dp),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -275,7 +277,7 @@ private fun Passage(text: String, highlighted: Boolean) {
     val c = Tundra.colors
     val bg by animateColorAsState(if (highlighted) c.highlight else Color.Transparent, tween(700), label = "hl")
     Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min).padding(vertical = 4.dp).clip(RoundedCornerShape(4.dp)).background(bg)) {
-        Box(Modifier.width(3.dp).fillMaxHeight().background(if (highlighted) c.ink else Color.Transparent))
+        Box(Modifier.width(3.dp).fillMaxHeight().background(if (highlighted) c.accentDot else Color.Transparent))
         Text(text, style = MaterialTheme.typography.bodyLarge, color = c.ink, modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
     }
 }
@@ -333,7 +335,7 @@ private fun PdfPages(
                     val isTarget = index == targetIndex
                     BoxWithConstraints(
                         Modifier.width(pageWidth).aspectRatio(pdf.aspect(index)).clip(RoundedCornerShape(4.dp)).background(Color.White)
-                            .border(if (isTarget) 3.dp else 1.dp, if (isTarget) c.ink else c.border, RoundedCornerShape(4.dp)),
+                            .border(if (isTarget) 2.dp else 1.dp, if (isTarget) c.accentDot else c.borderControl, RoundedCornerShape(4.dp)),
                     ) {
                         bitmap?.let { Image(it.asImageBitmap(), "Page ${index + 1}", Modifier.fillMaxSize()) }
                         // The passage the brain cited, outlined on the page itself.
@@ -347,7 +349,7 @@ private fun PdfPages(
                                     .offset(x = maxWidth * box[0], y = maxHeight * box[1])
                                     .size(width = maxWidth * (box[2] - box[0]), height = maxHeight * (box[3] - box[1]))
                                     .background(c.highlight.copy(alpha = alpha), RoundedCornerShape(3.dp))
-                                    .border(2.dp, c.ink, RoundedCornerShape(3.dp)),
+                                    .border(2.dp, c.accentDot, RoundedCornerShape(3.dp)),
                             )
                         }
                     }

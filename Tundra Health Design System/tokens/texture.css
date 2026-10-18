@@ -1,0 +1,21 @@
+:root{
+  /* Dotted survey grid — the brand's signature background. */
+  --dot-color:rgba(15,17,19,.10);
+  --dot-color-soft:rgba(15,17,19,.055);
+  --dot-color-inverse:rgba(248,242,220,.14);
+  --dot-size:1px; /* @kind other */
+  --dot-gap:22px; /* @kind other */
+  --dot-gap-tight:12px; /* @kind other */
+
+  --pattern-dots:radial-gradient(var(--dot-color) var(--dot-size),transparent var(--dot-size)); /* @kind other */
+  --pattern-dots-soft:radial-gradient(var(--dot-color-soft) var(--dot-size),transparent var(--dot-size)); /* @kind other */
+  --pattern-dots-inverse:radial-gradient(var(--dot-color-inverse) var(--dot-size),transparent var(--dot-size)); /* @kind other */
+
+  /* Paper grain — a tiled fractal-noise PNG-free SVG data URI. */
+  --grain-url:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.82' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='.5'/%3E%3C/svg%3E"); /* @kind other */
+  --grain-opacity:.32; /* @kind other */
+  --grain-opacity-strong:.55; /* @kind other */
+
+  --fade-top:linear-gradient(to bottom,var(--bg-page),rgba(242,241,237,0)); /* @kind other */
+  --fade-bottom:linear-gradient(to top,var(--bg-page),rgba(242,241,237,0)); /* @kind other */
+}

@@ -1,0 +1,24 @@
+<!-- @dsCard group="Components" viewport="700x340" name="Feedback" subtitle="Dialog, Toast, Tooltip, EmptyState" -->
+<!doctype html><html lang="en"><head><meta charset="utf-8"><link rel="stylesheet" href="../../styles.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script>
+<style>body{margin:0;padding:20px;background:var(--bg-page);font-family:var(--font-sans)}.row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.col{display:flex;flex-direction:column;gap:14px}.lbl{font:var(--weight-medium) var(--text-label)/1 var(--font-sans);letter-spacing:var(--ls-label);text-transform:uppercase;color:var(--text-muted)}</style>
+</head><body><div id="root"></div>
+<script type="text/babel">
+const { Dialog, Toast, Tooltip, EmptyState, Button, Icon } = window.TundraHealthDesignSystem_1734d4;
+function Demo(){const[o,setO]=React.useState(false);return(<div className="col" style={{gap:16}}>
+  <div className="row" style={{gap:14}}>
+    <Toast tone="ok" title="Manual generated" description="12 pages drafted from 3 service bulletins." onDismiss={()=>{}}/>
+    <div className="col" style={{gap:12}}><Tooltip label="Derived from 4 work orders"><span style={{display:'inline-flex',alignItems:'center',gap:6,font:'var(--weight-regular) var(--text-body-sm)/1 var(--font-sans)',color:'var(--text-secondary)'}}>Confidence 0.82 <Icon name="info" size={13}/></span></Tooltip>
+    <Button variant="secondary" size="sm" onClick={()=>setO(true)}>Open dialog</Button></div>
+  </div>
+  <div style={{border:'1px solid var(--border-hairline)',borderRadius:'var(--radius-lg)',background:'var(--paper-000)',overflow:'hidden'}}>
+    <EmptyState icon="file-search" title="No manual on file" description="Tundra can draft one from service bulletins and prior work orders." action={<Button variant="accent" size="sm" iconLeft="sparkles">Generate manual</Button>}/>
+  </div>
+  <Dialog open={o} onClose={()=>setO(false)} title="Flag as operator error?" description="This closes the call and notifies the requesting department." footer={<><Button variant="ghost" onClick={()=>setO(false)}>Cancel</Button><Button variant="primary" onClick={()=>setO(false)}>Flag and close</Button></>}/>
+</div>)}
+ReactDOM.createRoot(document.getElementById('root')).render(<Demo />);
+</script>
+</body></html>

@@ -1,0 +1,38 @@
+<!-- @dsCard group="Marketing site" viewport="1440x900" name="Marketing homepage" subtitle="Device graph, the device answering, MCP routines, disciplines, contract recovery" -->
+<!-- @startingPoint section="Marketing site" subtitle="Full marketing homepage on the dotted, grained brand surface" viewport="1440x900" -->
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Tundra — marketing UI kit</title>
+<link rel="stylesheet" href="../../styles.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script>
+<style>html,body{margin:0}body{background:var(--bg-page)}#root{min-width:1120px}</style>
+<template id="__bundler_thumbnail" data-bg-color="#F4F2EA">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 160" width="240" height="160"><rect width="240" height="160" fill="#F4F2EA"></rect><g transform="translate(72,48) scale(0.4)"><path d="M13 153.978L235.182 154.361" stroke="#35342E" stroke-width="10" stroke-linecap="round"></path><path d="M63.7491 105.417C65.7128 108.341 70.003 108.372 72.0092 105.477L141.011 5.92177C142.998 3.05478 147.236 3.05231 149.226 5.91699L235.544 130.147C237.847 133.462 235.475 138 231.437 138H9.34023C5.34723 138 2.96517 133.55 5.1794 130.227L38.5029 80.2193C40.4776 77.2561 44.8289 77.2481 46.8144 80.2041L63.7491 105.417Z" fill="#35342E"></path></g><text x="120" y="132" text-anchor="middle" font-family="Geist, Helvetica, Arial, sans-serif" font-size="17" font-weight="500" letter-spacing="-0.5" fill="#35342E">Tundra</text></svg>
+</template>
+</head><body><div id="root"></div>
+<script type="text/babel" src="./SiteBits.jsx"></script>
+<script type="text/babel" src="./SiteHeader.jsx"></script>
+<script type="text/babel" src="./Hero.jsx"></script>
+<script type="text/babel" src="./AskSection.jsx"></script>
+<script type="text/babel" src="./RoutinesSection.jsx"></script>
+<script type="text/babel" src="./UseCases.jsx"></script>
+<script type="text/babel" src="./AnalysisSection.jsx"></script>
+<script type="text/babel" src="./GraphSection.jsx"></script>
+<script type="text/babel" src="./SiteFooter.jsx"></script>
+<script type="text/babel">
+/* Each section is isolated: a failure in one renders a placeholder in its place
+   instead of unmounting the whole page. */
+const SECTIONS = ['GraphSection','AskSection','RoutinesSection','UseCases','AnalysisSection'];
+function Site(){
+  const B = window.SectionBoundary;
+  return (<>
+    <B><SiteHeader/></B>
+    <B><Hero/></B>
+    {SECTIONS.map(n => { const C = window[n]; return <B key={n}>{C ? <C/> : null}</B>; })}
+    <B><SiteFooter/></B>
+  </>);
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<Site/>);
+</script>
+</body></html>

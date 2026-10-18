@@ -1,0 +1,23 @@
+<!-- @dsCard group="Components" viewport="700x300" name="Brand" subtitle="Logo lockup and dotted, grained Surface" -->
+<!doctype html><html lang="en"><head><meta charset="utf-8"><link rel="stylesheet" href="../../styles.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script>
+<style>body{margin:0;padding:20px;background:var(--bg-page);font-family:var(--font-sans)}.row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.col{display:flex;flex-direction:column;gap:14px}.lbl{font:var(--weight-medium) var(--text-label)/1 var(--font-sans);letter-spacing:var(--ls-label);text-transform:uppercase;color:var(--text-muted)}</style>
+</head><body><div id="root"></div>
+<script type="text/babel">
+const { Logo, Surface } = window.TundraHealthDesignSystem_1734d4;
+function Demo(){return(<div className="col" style={{gap:14}}>
+  <div className="row" style={{gap:28}}><Logo size={26}/><Logo size={20} color="var(--cobalt-700)"/><Logo size={18} wordmark={false}/></div>
+  <Surface tone="ink" style={{borderRadius:'var(--radius-lg)',padding:'34px 28px'}} dotGap="14px">
+    <Logo size={20} color="var(--cream-100)"/>
+    <div style={{marginTop:14,maxWidth:420,font:'var(--weight-regular) var(--text-size-body)/1.5 var(--font-sans)',color:'var(--cream-surface)',opacity:.82}}>Every device, every record, one graph.</div>
+  </Surface>
+  <Surface tone="cream" style={{borderRadius:'var(--radius-lg)',padding:'22px 28px',border:'1px solid var(--border-hairline)'}}>
+    <div style={{font:'var(--weight-regular) var(--text-body-sm)/1.5 var(--font-sans)',color:'var(--ink-800)'}}>Cream surface — one per view, reserved for the brand moment.</div>
+  </Surface>
+</div>)}
+ReactDOM.createRoot(document.getElementById('root')).render(<Demo />);
+</script>
+</body></html>
