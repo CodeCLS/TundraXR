@@ -41,3 +41,16 @@ suspend fun cropRegion(path: String, box: List<Float>, outDir: File): File? = wi
         out
     }.getOrNull()
 }
+
+/** A copy of a camera photo at most [maxPx] on its long side (JPEG 85); the file itself when already small. */
+fun shrinkPhoto(file: File, maxPx: Int = 2048): File? = runCatching {
+    val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    android.graphics.BitmapFactory.decodeFile(file.path, bounds)
+    if (maxOf(bounds.outWidth, bounds.outHeight) <= maxPx && file.length() < 1_500_000) return@runCatching file
+    var sample = 1
+    while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= maxPx) sample *= 2
+    val bmp = android.graphics.BitmapFactory.decodeFile(file.path, android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }) ?: return@runCatching null
+    val out = File(file.parentFile, "search_${file.name}")
+    out.outputStream().use { bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 85, it) }
+    out
+}.getOrNull()

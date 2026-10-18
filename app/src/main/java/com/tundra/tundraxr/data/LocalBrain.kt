@@ -81,7 +81,7 @@ class LocalBrain(private val baseUrl: String, private val cropper: DeviceCropper
             .onSuccess { Log.i("TundraCrop", "crop ${it.box ?: "none (whole photo)"} in ${it.millis} ms") }
             .getOrNull()?.file ?: image
         // Full camera frames are several MB; Tundra reads a type plate fine at 2048 px.
-        val small = withContext(Dispatchers.IO) { shrink(cropped) } ?: cropped
+        val small = withContext(Dispatchers.IO) { shrinkPhoto(cropped) } ?: cropped
         val res = JSONObject(post("/api/identify", JSONObject().put("sessionId", sessionId), small, "image/jpeg"))
         val arr = res.optJSONArray("matches") ?: JSONArray()
         return (0 until arr.length()).map { i ->
@@ -94,18 +94,6 @@ class LocalBrain(private val baseUrl: String, private val cropper: DeviceCropper
             )
         }
     }
-
-    private fun shrink(file: File, maxPx: Int = 2048): File? = runCatching {
-        val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        android.graphics.BitmapFactory.decodeFile(file.path, bounds)
-        if (maxOf(bounds.outWidth, bounds.outHeight) <= maxPx && file.length() < 1_500_000) return@runCatching file
-        var sample = 1
-        while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= maxPx) sample *= 2
-        val bmp = android.graphics.BitmapFactory.decodeFile(file.path, android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }) ?: return@runCatching null
-        val out = File(file.parentFile, "search_${file.name}")
-        out.outputStream().use { bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 85, it) }
-        out
-    }.getOrNull()
 
     override suspend fun findDevices(query: String): List<Device> = runCatching {
         val arr = JSONArray(get("/api/devices/search?q=${URLEncoder.encode(query, "UTF-8")}"))
@@ -161,47 +149,6 @@ class LocalBrain(private val baseUrl: String, private val cropper: DeviceCropper
             charts = res.optJSONArray("charts")?.let { a -> (0 until a.length()).mapNotNull { parseChart(a.getJSONObject(it)) } } ?: emptyList(),
             tables = res.optJSONArray("tables")?.let { a -> (0 until a.length()).map { parseTable(a.getJSONObject(it)) } } ?: emptyList(),
             followUps = res.optJSONArray("followUps")?.let { a -> (0 until a.length()).map { a.getString(it) } } ?: emptyList(),
-        )
-    }
-
-    private fun parseChart(c: JSONObject): Chart? = runCatching {
-        val spec = c.getJSONObject("spec")
-        val series = spec.getJSONArray("series")
-        val points = c.getJSONArray("points")
-        Chart(
-            id = c.optString("id"),
-            type = when (spec.optString("type")) {
-                "line" -> ChartType.Line
-                "area" -> ChartType.Area
-                "pie" -> ChartType.Pie
-                "scatter" -> ChartType.Scatter
-                else -> ChartType.Bar
-            },
-            title = spec.optString("title"),
-            caption = spec.optString("caption"),
-            xLabel = spec.optJSONObject("x")?.optString("label").orEmpty(),
-            yLabel = spec.optJSONObject("y")?.optString("label").orEmpty(),
-            unit = spec.optJSONObject("y")?.optString("unit").orEmpty().takeIf { it != "none" }.orEmpty(),
-            series = (0 until series.length()).map { series.getJSONObject(it).optString("label") },
-            stacked = spec.optBoolean("stacked"),
-            points = (0 until points.length()).map { i ->
-                val p = points.getJSONObject(i)
-                val v = p.getJSONArray("values")
-                ChartPoint(p.get("x").toString(), (0 until v.length()).map { if (v.isNull(it)) null else v.getDouble(it).toFloat() })
-            },
-            illustrative = spec.optBoolean("illustrative"),
-        )
-    }.getOrNull()
-
-    private fun parseTable(t: JSONObject): DataTable {
-        val cols = t.getJSONArray("columns")
-        val rows = t.getJSONArray("rows")
-        return DataTable(
-            name = t.optString("dataset"),
-            columns = (0 until cols.length()).map { cols.get(it).let { c -> (c as? JSONObject)?.optString("label") ?: c.toString() } },
-            rows = (0 until rows.length()).map { r -> rows.getJSONArray(r).let { row -> (0 until row.length()).map { if (row.isNull(it)) "" else row.get(it).toString() } } },
-            rowCount = t.optInt("row_count", rows.length()),
-            truncated = t.optBoolean("truncated"),
         )
     }
 

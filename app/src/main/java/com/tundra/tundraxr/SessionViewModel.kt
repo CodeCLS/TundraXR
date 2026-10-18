@@ -9,6 +9,7 @@ import com.tundra.tundraxr.assistant.parseCommand
 import com.tundra.tundraxr.data.CaptureItem
 import com.tundra.tundraxr.data.CaptureKind
 import com.tundra.tundraxr.data.ChatMessage
+import com.tundra.tundraxr.data.CloudBrain
 import com.tundra.tundraxr.data.DemoBrain
 import com.tundra.tundraxr.data.Device
 import com.tundra.tundraxr.data.ImageMatch
@@ -132,7 +133,12 @@ class SessionViewModel(app: Application) : AndroidViewModel(app) {
 
     // Demo builds (tundra.demo=true) answer from the scripted brain so the UI can be tested offline.
     // Identification photos are cropped here (so the island can show the crop), not in the brain client.
-    private val brain: TundraBrain = if (BuildConfig.TUNDRA_DEMO) DemoBrain() else LocalBrain(BuildConfig.TUNDRA_SERVER_URL)
+    // With a Tundra key the headset goes straight to Tundra Cloud; without one, through the laptop.
+    private val brain: TundraBrain = when {
+        BuildConfig.TUNDRA_DEMO -> DemoBrain()
+        BuildConfig.TUNDRA_API_KEY.isNotEmpty() -> CloudBrain(BuildConfig.TUNDRA_API_KEY)
+        else -> LocalBrain(BuildConfig.TUNDRA_SERVER_URL)
+    }
 
     private val _state = MutableStateFlow(SessionState())
     val state: StateFlow<SessionState> = _state.asStateFlow()

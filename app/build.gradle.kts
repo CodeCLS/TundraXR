@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -27,6 +29,13 @@ android {
         // the UI without a server or manuals. Set tundra.demo=true in gradle.properties.
         val demo = providers.gradleProperty("tundra.demo").getOrElse("false").toBoolean()
         buildConfigField("boolean", "TUNDRA_DEMO", "$demo")
+        // The hospital's Tundra Cloud key (tgk_…): with it the headset talks to Tundra Cloud
+        // directly, no laptop needed. Kept out of git: set tundra.apiKey in local.properties.
+        val localProps = Properties().apply {
+            rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
+        }
+        val apiKey = providers.gradleProperty("tundra.apiKey").orNull ?: localProps.getProperty("tundra.apiKey", "")
+        buildConfigField("String", "TUNDRA_API_KEY", "\"$apiKey\"")
     }
 
     buildTypes {
