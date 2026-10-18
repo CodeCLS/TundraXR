@@ -26,6 +26,11 @@ private const val SIZE = 512
 
 /** A mask counts when the model trusts it and it is neither a speck nor the whole view. */
 private const val MIN_IOU = 0.7f
+/**
+ * Where to ask the model for an object, as fractions of the photo, in order. Measured on photos
+ * from the headset: things looked at straight on sit around 2/3 down the world camera's frame.
+ */
+private val GAZE_POINTS = listOf(0.5f to 0.66f, 0.5f to 0.8f, 0.5f to 0.5f)
 private const val MIN_AREA = 0.01f
 private const val MAX_AREA = 0.85f
 private const val MARGIN = 0.12f
@@ -67,7 +72,6 @@ class DeviceCropper(private val context: Context) {
         val bitmap = decodeUpright(photo) ?: return null
         val w = bitmap.width
         val h = bitmap.height
-        val p = point ?: PointF(w / 2f, h / 2f)
 
         val input = Bitmap.createScaledBitmap(bitmap, SIZE, SIZE, true)
         val pixels = IntArray(SIZE * SIZE).also { input.getPixels(it, 0, SIZE, 0, 0, SIZE, SIZE) }
@@ -81,27 +85,31 @@ class DeviceCropper(private val context: Context) {
             chw[2 * plane + i] = (c and 0xFF) / 255f
         }
 
-        val t = SystemClock.elapsedRealtime()
-        val out = model.forward(
-            EValue.from(Tensor.fromBlob(chw, longArrayOf(1, 3, SIZE.toLong(), SIZE.toLong()))),
-            EValue.from(Tensor.fromBlob(floatArrayOf(p.x / w * SIZE, p.y / h * SIZE), longArrayOf(1, 2))),
-        )
-        val maskTensor = out[0].toTensor()
-        val masks = maskTensor.dataAsFloatArray
-        val iou = out[1].toTensor().dataAsFloatArray
-        Log.i(TAG, "model ${SystemClock.elapsedRealtime() - t} ms, iou=${iou.joinToString { "%.2f".format(it) }}")
-
-        val box = chooseBox(masks, maskTensor.shape().last().toInt(), iou, w, h)
-        if (box == null) {
+        // The Galaxy XR's world camera is wide and aimed above the eyes: what the engineer looks at
+        // sits in the lower part of its frame, and the centre usually lands on whatever is behind it.
+        // Try where they look first and stop at the first real object.
+        val candidates = point?.let { listOf(it) } ?: GAZE_POINTS.map { (fx, fy) -> PointF(w * fx, h * fy) }
+        for (p in candidates) {
+            val t = SystemClock.elapsedRealtime()
+            val out = model.forward(
+                EValue.from(Tensor.fromBlob(chw, longArrayOf(1, 3, SIZE.toLong(), SIZE.toLong()))),
+                EValue.from(Tensor.fromBlob(floatArrayOf(p.x / w * SIZE, p.y / h * SIZE), longArrayOf(1, 2))),
+            )
+            val maskTensor = out[0].toTensor()
+            val masks = maskTensor.dataAsFloatArray
+            val iou = out[1].toTensor().dataAsFloatArray
+            val box = chooseBox(masks, maskTensor.shape().last().toInt(), iou, w, h)
+            Log.i(TAG, "point (%.2f, %.2f): model %d ms, iou=%s → %s".format(p.x / w, p.y / h, SystemClock.elapsedRealtime() - t, iou.joinToString { "%.2f".format(it) }, box ?: "no object"))
+            if (box == null) continue
+            val cropped = Bitmap.createBitmap(bitmap, box.left, box.top, box.width(), box.height())
+            val file = File(photo.parentFile, photo.nameWithoutExtension + "_crop.jpg")
+            file.outputStream().use { cropped.compress(Bitmap.CompressFormat.JPEG, 92, it) }
+            cropped.recycle()
             bitmap.recycle()
-            return null
+            return file to box
         }
-        val cropped = Bitmap.createBitmap(bitmap, box.left, box.top, box.width(), box.height())
-        val file = File(photo.parentFile, photo.nameWithoutExtension + "_crop.jpg")
-        file.outputStream().use { cropped.compress(Bitmap.CompressFormat.JPEG, 92, it) }
-        cropped.recycle()
         bitmap.recycle()
-        return file to box
+        return null
     }
 
     private fun load(): Module? {
