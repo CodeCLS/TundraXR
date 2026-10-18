@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.tundra.tundraxr.data.CaptureItem
 import com.tundra.tundraxr.data.CaptureKind
 import com.tundra.tundraxr.data.ChatMessage
+import com.tundra.tundraxr.data.DemoBrain
 import com.tundra.tundraxr.data.Device
 import com.tundra.tundraxr.data.LocalBrain
 import com.tundra.tundraxr.data.Manual
@@ -50,7 +51,8 @@ data class SessionState(
 }
 
 class SessionViewModel(
-    private val brain: TundraBrain = LocalBrain(BuildConfig.TUNDRA_SERVER_URL),
+    // Demo builds (tundra.demo=true) answer from the scripted brain so the UI can be tested offline.
+    private val brain: TundraBrain = if (BuildConfig.TUNDRA_DEMO) DemoBrain() else LocalBrain(BuildConfig.TUNDRA_SERVER_URL),
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(SessionState())

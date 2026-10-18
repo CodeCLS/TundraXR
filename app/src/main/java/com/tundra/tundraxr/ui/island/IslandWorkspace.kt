@@ -36,6 +36,7 @@ import androidx.xr.compose.unit.DpVolumeSize
 import androidx.xr.scenecore.SpatialEnvironment
 import androidx.xr.scenecore.scene
 import com.tundra.tundraxr.Actions
+import com.tundra.tundraxr.BuildConfig
 import com.tundra.tundraxr.SessionState
 import com.tundra.tundraxr.ui.components.DotPattern
 import com.tundra.tundraxr.ui.theme.Tundra
@@ -118,7 +119,7 @@ fun SpatialIslandWorkspace(state: SessionState, actions: Actions, onRequestHomeS
         onDispose { environment?.preferredPassthroughOpacity = SpatialEnvironment.NO_PASSTHROUGH_OPACITY_PREFERENCE }
     }
     val ui = rememberIslandUi()
-    val model = state.toIslandModel()
+    val model = state.toIslandModel(demo = BuildConfig.TUNDRA_DEMO)
     val islandActions = islandActions(ui, actions, onRequestHomeSpace, switchToFull = false)
     Subspace {
         SpatialRow(horizontalArrangement = SpatialArrangement.spacedBy(32.dp)) {
@@ -156,7 +157,7 @@ fun SpatialIslandWorkspace(state: SessionState, actions: Actions, onRequestHomeS
 fun HomeSpaceIslandWorkspace(state: SessionState, actions: Actions, canGoFullSpace: Boolean, onRequestFullSpace: () -> Unit) {
     val c = Tundra.colors
     val ui = rememberIslandUi()
-    val model = state.toIslandModel()
+    val model = state.toIslandModel(demo = BuildConfig.TUNDRA_DEMO)
     val base = islandActions(ui, actions, onRequestFullSpace.takeIf { canGoFullSpace }, switchToFull = true)
     val focused = ui.focused.value
     val islandActions = if (focused == null) base else IslandActions(

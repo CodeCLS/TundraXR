@@ -35,6 +35,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tundra.tundraxr.R
 import com.tundra.tundraxr.ui.components.AskInput
+import com.tundra.tundraxr.ui.components.Badge
+import com.tundra.tundraxr.ui.components.BadgeTone
 import com.tundra.tundraxr.ui.components.ChatBubble
 import com.tundra.tundraxr.ui.components.ControlShape
 import com.tundra.tundraxr.ui.components.Hairline
@@ -110,12 +112,17 @@ private fun Header(model: IslandModel, actions: IslandActions) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         AIStatusIndicator(model.ai)
         Column(Modifier.weight(1f).padding(start = 12.dp)) {
-            Text("AI Repair Copilot", style = MaterialTheme.typography.titleMedium, color = c.ink)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("AI Repair Copilot", style = MaterialTheme.typography.titleMedium, color = c.ink)
+                if (model.demo) Badge("Demo", Modifier.padding(start = 10.dp), tone = BadgeTone.Warn)
+            }
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 2.dp)) {
-                val (dot, text) = when (model.online) {
-                    true -> c.okDot to "Laptop brain"
-                    false -> c.downDot to "Offline"
-                    null -> c.ring to "Connecting"
+                val (dot, text) = when {
+                    // Scripted answers: say so instead of claiming the laptop is connected.
+                    model.demo -> c.warnDot to "Demo brain"
+                    model.online == true -> c.okDot to "Laptop brain"
+                    model.online == false -> c.downDot to "Offline"
+                    else -> c.ring to "Connecting"
                 }
                 StatusDot(dot)
                 MonoLabel(text, Modifier.padding(start = 6.dp), small = true)

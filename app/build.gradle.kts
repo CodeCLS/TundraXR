@@ -22,6 +22,11 @@ android {
         // for Wi-Fi set tundra.serverUrl=http://<laptop-ip>:8787 in gradle.properties.
         val serverUrl = providers.gradleProperty("tundra.serverUrl").getOrElse("http://localhost:8787")
         buildConfigField("String", "TUNDRA_SERVER_URL", "\"$serverUrl\"")
+
+        // Demo mode: scripted answers and capture analysis instead of the laptop brain, for testing
+        // the UI without a server or manuals. Set tundra.demo=true in gradle.properties.
+        val demo = providers.gradleProperty("tundra.demo").getOrElse("false").toBoolean()
+        buildConfigField("boolean", "TUNDRA_DEMO", "$demo")
     }
 
     buildTypes {

@@ -24,7 +24,7 @@ fun SessionState.aiState(): AiState {
 }
 
 /** Everything the island shows, flattened from the session. The only place the two meet. */
-fun SessionState.toIslandModel(): IslandModel {
+fun SessionState.toIslandModel(demo: Boolean = false): IslandModel {
     val ai = aiState()
     val reply = chat.lastOrNull { !it.fromUser }
     val settledReply = reply?.takeUnless { it.streaming }
@@ -60,6 +60,7 @@ fun SessionState.toIslandModel(): IslandModel {
         voiceError = voiceError,
         listeningForAsk = listeningFor == VoiceTarget.Ask,
         listeningForNote = listeningFor == VoiceTarget.Note,
+        demo = demo,
     )
 }
 

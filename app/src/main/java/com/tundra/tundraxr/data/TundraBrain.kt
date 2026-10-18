@@ -1,6 +1,7 @@
 package com.tundra.tundraxr.data
 
 import kotlinx.coroutines.delay
+import java.util.concurrent.ConcurrentHashMap
 
 /** The Tundra brain as seen from the headset. */
 interface TundraBrain {
@@ -15,8 +16,15 @@ interface TundraBrain {
     suspend fun statuses(sessionId: String): Map<String, RemoteStatus>?
 }
 
-/** Scripted brain for demos and UI work. Device, history and manual text are sample content. */
-class DemoBrain : TundraBrain {
+/**
+ * Scripted brain for demos and UI work. Device, history and manual text are sample content.
+ * Timings imitate the laptop brain so every island state can be seen: a question "thinks" for
+ * about two seconds, photos are analyzed for a few seconds, videos upload and then analyze.
+ */
+class DemoBrain(private val now: () -> Long = System::currentTimeMillis) : TundraBrain {
+
+    /** Captures handed to the demo, by the id it gave them: kind and when they arrived. */
+    private val received = ConcurrentHashMap<String, Pair<CaptureKind, Long>>()
 
     private val device = Device(
         id = "dev_0412",
@@ -79,13 +87,27 @@ class DemoBrain : TundraBrain {
 
     override suspend fun ingest(sessionId: String, device: Device, item: CaptureItem): Pair<String?, RemoteStatus> {
         delay(if (item.kind == CaptureKind.Video) 1800 else 900)
-        return null to RemoteStatus(SyncState.InBrain, null)
+        val id = "demo-${item.id}"
+        received[id] = item.kind to now()
+        return id to statusOf(item.kind, 0)
     }
 
-    override suspend fun statuses(sessionId: String): Map<String, RemoteStatus> = emptyMap()
+    override suspend fun statuses(sessionId: String): Map<String, RemoteStatus> =
+        received.mapValues { (_, v) -> statusOf(v.first, now() - v.second) }
+
+    /** Where a capture is in the scripted pipeline, [elapsedMs] after it arrived. */
+    private fun statusOf(kind: CaptureKind, elapsedMs: Long): RemoteStatus = when (kind) {
+        CaptureKind.Note -> RemoteStatus(SyncState.InBrain, null)
+        CaptureKind.Photo -> if (elapsedMs < 4_000) RemoteStatus(SyncState.Analyzing, null) else RemoteStatus(SyncState.Analyzed, "2 findings")
+        CaptureKind.Video -> when {
+            elapsedMs < 3_000 -> RemoteStatus(SyncState.Analyzing, "Uploading")
+            elapsedMs < 9_000 -> RemoteStatus(SyncState.Analyzing, null)
+            else -> RemoteStatus(SyncState.Analyzed, "3 findings")
+        }
+    }
 
     override suspend fun ask(sessionId: String, device: Device, question: String, session: List<CaptureItem>): BrainAnswer {
-        delay(700)
+        delay(1800) // long enough to see the island's thinking state
         val q = question.lowercase()
         return when {
             listOf("alarm", "error", "fault", "fan").any { it in q } -> BrainAnswer(

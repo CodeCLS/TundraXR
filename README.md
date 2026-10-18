@@ -41,3 +41,5 @@ curl -L -o server/models/ggml-base.en.bin https://huggingface.co/ggerganov/whisp
 Open the project in Android Studio and run `app` on a Galaxy XR over USB or on the Android XR emulator. The app talks to `http://localhost:8787`; the server keeps `adb reverse tcp:8787 tcp:8787` up automatically for connected devices. To point it elsewhere: `./gradlew installDebug -Ptundra.serverUrl=http://<host>:8787`.
 
 Without the server, the app falls back to a built-in demo device.
+
+**Demo mode.** To test the UI without the server or manuals, build with `tundra.demo=true` (uncomment it in `gradle.properties`, or `./gradlew installDebug -Ptundra.demo=true`). Questions, spoken or typed, get scripted answers with manual citations after a short "thinking" pause, and photos and videos run through a scripted upload → analysis → findings sequence. The island marks this as Demo.

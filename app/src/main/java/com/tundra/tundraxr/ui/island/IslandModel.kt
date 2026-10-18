@@ -70,6 +70,8 @@ data class IslandModel(
     /** Off until their flows exist (step 6); the buttons show disabled rather than doing nothing. */
     val canScreenshot: Boolean = false,
     val canUpload: Boolean = false,
+    /** Answers and analysis are scripted (demo build); labelled so nobody takes them for records. */
+    val demo: Boolean = false,
 ) {
     val activeCalls get() = progress.filter { it.status == CallStatus.Running || it.status == CallStatus.Queued }
 }
