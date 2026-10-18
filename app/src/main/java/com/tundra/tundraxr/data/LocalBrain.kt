@@ -1,5 +1,7 @@
 package com.tundra.tundraxr.data
 
+import android.util.Log
+import com.tundra.tundraxr.capture.DeviceCropper
 import com.tundra.tundraxr.formatClock
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -15,7 +17,7 @@ import java.net.URLEncoder
  * hospital's key: devices, manuals, identification, captures and questions. Nothing is scripted:
  * when the laptop or the cloud can't answer, the error says so.
  */
-class LocalBrain(private val baseUrl: String) : TundraBrain {
+class LocalBrain(private val baseUrl: String, private val cropper: DeviceCropper? = null) : TundraBrain {
 
     /** Devices seen so far (inventory, identified, searched), with their manuals. */
     private val known = java.util.concurrent.ConcurrentHashMap<String, Pair<Device, Manual>>()
@@ -71,8 +73,15 @@ class LocalBrain(private val baseUrl: String) : TundraBrain {
     }
 
     override suspend fun identify(sessionId: String, image: File): List<ImageMatch> {
+        // Crop the photo to the device first (on the headset, ~0.5 s), unless the engineer already
+        // drew the region themselves. Without the model the cropper hands the photo back unchanged.
+        val c = cropper
+        val cropped = if (image.name.startsWith("region_") || c == null) image
+        else runCatching { c.crop(image) }
+            .onSuccess { Log.i("TundraCrop", "crop ${it.box ?: "none (whole photo)"} in ${it.millis} ms") }
+            .getOrNull()?.file ?: image
         // Full camera frames are several MB; Tundra reads a type plate fine at 2048 px.
-        val small = withContext(Dispatchers.IO) { shrink(image) } ?: image
+        val small = withContext(Dispatchers.IO) { shrink(cropped) } ?: cropped
         val res = JSONObject(post("/api/identify", JSONObject().put("sessionId", sessionId), small, "image/jpeg"))
         val arr = res.optJSONArray("matches") ?: JSONArray()
         return (0 until arr.length()).map { i ->

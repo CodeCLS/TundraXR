@@ -1,6 +1,8 @@
 package com.tundra.tundraxr
 
-import androidx.lifecycle.ViewModel
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
+import com.tundra.tundraxr.capture.DeviceCropper
 import androidx.lifecycle.viewModelScope
 import com.tundra.tundraxr.assistant.Command
 import com.tundra.tundraxr.assistant.parseCommand
@@ -115,10 +117,13 @@ data class SessionState(
     val syncedCount get() = captures.count { it.sync != SyncState.Sending && it.sync != SyncState.Failed }
 }
 
-class SessionViewModel(
+class SessionViewModel(app: Application) : AndroidViewModel(app) {
+
+    // Crops identification photos to the device on the headset (ExecuTorch) before image search.
+    private val cropper = DeviceCropper(app)
+
     // Demo builds (tundra.demo=true) answer from the scripted brain so the UI can be tested offline.
-    private val brain: TundraBrain = if (BuildConfig.TUNDRA_DEMO) DemoBrain() else LocalBrain(BuildConfig.TUNDRA_SERVER_URL),
-) : ViewModel() {
+    private val brain: TundraBrain = if (BuildConfig.TUNDRA_DEMO) DemoBrain() else LocalBrain(BuildConfig.TUNDRA_SERVER_URL, cropper)
 
     private val _state = MutableStateFlow(SessionState())
     val state: StateFlow<SessionState> = _state.asStateFlow()
@@ -144,6 +149,8 @@ class SessionViewModel(
         // The device is unknown until the engineer takes a photo of it (or names it).
         viewModelScope.launch { _state.update { it.copy(devices = brain.devices()) } }
         viewModelScope.launch { pollBrain() }
+        // Loads the ~40 MB crop model once, so the first identification isn't slower.
+        viewModelScope.launch { runCatching { cropper.warmUp() } }
     }
 
     /** Identification is simulated, so the engineer can correct it. */
