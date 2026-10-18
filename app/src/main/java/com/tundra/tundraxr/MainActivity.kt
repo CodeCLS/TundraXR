@@ -78,6 +78,8 @@ class MainActivity : ComponentActivity() {
                                 vm.onRecordingStarted()
                             }
                             Effect.StopRecording -> vm.onRecordingStopped(camera.stopRecording())
+                            Effect.StartDictation -> talk.startDictation()
+                            Effect.StopDictation -> talk.stopDictation()
                         }
                     }
                 }

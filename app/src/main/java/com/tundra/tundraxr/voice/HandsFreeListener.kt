@@ -67,6 +67,8 @@ class HandsFreeListener(
     private var held = false
     /** Waiting for the recognizer's final result after letting go. */
     private var finishing = false
+    /** Continuous dictation (a video's narration, a spoken note): every sentence is delivered, no pinch needed. */
+    private var dictating = false
     /** Text from earlier recognizer sessions within the same hold (it can end on a pause). */
     private var committed = ""
     private var lastPartial = ""
@@ -74,8 +76,29 @@ class HandsFreeListener(
     private val hasMic get() =
         ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
 
+    /** Listen continuously and deliver each sentence as it ends, until [stopDictation]. */
+    fun startDictation() {
+        if (dictating) return
+        if (!hasMic) return callbacks().onError("Microphone permission is off")
+        dictating = true
+        committed = ""
+        lastPartial = ""
+        Log.i(TAG, "dictation: start")
+        if (!held && !useLaptop) startSystem()
+    }
+
+    /** Ends dictation; whatever is being said right now is still delivered. */
+    fun stopDictation() {
+        if (!dictating) return
+        dictating = false
+        Log.i(TAG, "dictation: stop")
+        if (!held) recognizer?.stopListening()
+    }
+
     /** Pinch went down: start listening. */
     fun begin() {
+        // Already listening to everything while dictating.
+        if (dictating) return
         if (held) return
         if (!hasMic) return callbacks().onError("Microphone permission is off")
         held = true
@@ -90,6 +113,7 @@ class HandsFreeListener(
 
     /** Pinch released: finish the sentence. */
     fun end() {
+        if (dictating) return
         if (!held) return
         held = false
         Log.i(TAG, "hold: end")
@@ -100,6 +124,7 @@ class HandsFreeListener(
 
     /** Stop without acting on anything (app went to the background). */
     fun cancel() {
+        dictating = false
         held = false
         finishing = false
         laptopJob?.cancel()
@@ -135,16 +160,26 @@ class HandsFreeListener(
                 .putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
                 .putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
                 .putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
-                // Letting go ends the sentence, so pauses while holding shouldn't.
-                .putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 8000L)
-                .putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 8000L)
-                .putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 15000L),
+                // Holding: letting go ends the sentence, so pauses shouldn't. Dictating: a pause ends
+                // the sentence, so it's committed while the engineer keeps working.
+                .putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, if (dictating && !held) 1500L else 8000L)
+                .putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, if (dictating && !held) 1200L else 8000L)
+                .putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, if (dictating && !held) 0L else 15000L),
         )
     }
 
     /** The recognizer ended on its own while still held: keep what it heard and listen on. */
     private fun continueOrDeliver(finalText: String?) {
         if (!finalText.isNullOrBlank()) lastPartial = finalText
+        if (dictating && !held) {
+            // Each sentence goes out as it ends; then listen on.
+            val text = spoken().trim()
+            committed = ""
+            lastPartial = ""
+            if (text.isNotBlank()) callbacks().onUtterance(text)
+            startSystem()
+            return
+        }
         if (held) {
             committed = spoken()
             lastPartial = ""
@@ -159,7 +194,7 @@ class HandsFreeListener(
         override fun onBeginningOfSpeech() = Unit
 
         override fun onRmsChanged(rmsdB: Float) {
-            if (held) callbacks().onLevel(((rmsdB + 2f) / 12f).coerceIn(0f, 1f))
+            if (held || dictating) callbacks().onLevel(((rmsdB + 2f) / 12f).coerceIn(0f, 1f))
         }
 
         override fun onPartialResults(partialResults: Bundle) {
@@ -175,7 +210,7 @@ class HandsFreeListener(
         }
 
         override fun onError(error: Int) {
-            if (!held && !finishing) return // cancelled
+            if (!held && !finishing && !dictating) return // cancelled
             when (error) {
                 SpeechRecognizer.ERROR_NO_MATCH, SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> continueOrDeliver(null)
                 SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> {
@@ -187,7 +222,7 @@ class HandsFreeListener(
                     Log.w(TAG, "system: ${errorName(error)}")
                     recognizer?.destroy()
                     recognizer = null
-                    if (held) startSystem() else deliver()
+                    if (held || dictating) startSystem() else deliver()
                 }
                 else -> {
                     Log.w(TAG, "system: error $error (${errorName(error)})")

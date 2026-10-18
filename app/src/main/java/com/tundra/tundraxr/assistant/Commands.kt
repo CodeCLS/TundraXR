@@ -8,6 +8,8 @@ sealed interface Command {
     data class Photo(val hint: Device?) : Command
     /** "select a region": freeze a photo and draw a box around the device to search for it. */
     data object RegionCapture : Command
+    /** "listen to my documentation", "take a note": dictate a note, no pinch needed. */
+    data object Dictate : Command
     data object StartRecording : Command
     /** "stop", "done", "save it". */
     data object Stop : Command
@@ -37,6 +39,7 @@ private val PHOTO_THEN_WHAT = Regex("""\b(which|what) (it|this|that) is\b|\btell
 private val IDENTIFY = Regex("""\b(which|what) (medical )?(device|machine|equipment|system|unit)\b.*\b(looking at|in front of me|is (this|that|it)|am i|this is)\b|\bwhat am i looking at\b|\bwhat is (this|that)( (device|machine|thing))?$|\bwhat'?s (this|that)( (device|machine|thing))?$|\bidentify (this|it|that|the (device|machine))\b|\bscan (this|the) (device|machine|label)\b|\brecogni[sz]e (this|it|the device)\b""")
 private val FIND_PREFIX = Regex("""^(this is|it'?s|switch to|change to|select|use|find|look up|search for|i'?m working on|working on) (the |a |an |our )?""")
 private val REGION = Regex("""\b(select|pick|mark|crop|choose|draw)\b.*\b(region|area|box)\b|\bregion (capture|search|scan|select)\b|\b(search|scan) (a |an |this |the )?(region|area)\b|\bimage search\b""")
+private val DICTATE = Regex("""\b(listen to|record|take|add|upload|save|leave|write down|dictate) (down )?(my |a |an |this |the )?(documentation|comment|note|notes|remark|observation|report)\b|\b(i want to|let me|i'?d like to) (add|leave|dictate|record|document) (a |something|my )?(comment|note|documentation)?\b|\b(start|begin) (a |the )?(note|comment|dictation)\b|\bdictation\b""")
 private val RECORD = Regex("""\b(start|begin)\b.*\b(record|recording|video|documenting|documentation)\b|\brecord (a )?video\b|\bdocument this\b|\bstart documenting\b""")
 private val STOP = Regex("""^(ok(ay)? )?(stop|done|finish|finished|end|save)( (it|that|recording|the recording|the video|video|documentation|now))?( please)?$|\b(stop|end|finish) (the )?(recording|video)\b|\bsave (the )?(documentation|recording|video)\b|\bthat'?s (it|all)\b|\bi'?m done\b""")
 private val CLOSE_MANUAL = Regex("""\b(close|hide|dismiss)\b.*\b(manual|pdf|document)\b|^(close|hide) (it|that)$""")
@@ -66,6 +69,7 @@ fun parseCommand(raw: String, devices: List<Device>, recording: Boolean): Comman
 
     if (STOP.containsMatchIn(text) && (recording || text.length < 24)) return Command.Stop
     if (CANCEL.matches(text)) return Command.Cancel
+    if (!recording && DICTATE.containsMatchIn(text) && !RECORD.containsMatchIn(text)) return Command.Dictate
     if (REGION.containsMatchIn(text)) return Command.RegionCapture
     if (!recording && LOOKING_AT.containsMatchIn(text)) return Command.Identify
     if (!recording && PHOTO.containsMatchIn(text) && PHOTO_THEN_WHAT.containsMatchIn(text)) return Command.Identify

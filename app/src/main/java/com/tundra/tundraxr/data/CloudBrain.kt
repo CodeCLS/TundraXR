@@ -307,6 +307,27 @@ class CloudBrain(private val apiKey: String, private val base: String = "https:/
         )
     }
 
+    override suspend fun summarize(device: Device?, transcript: String): List<String>? = runCatching {
+        val entry = device?.let { entries[it.id] }
+        val prompt = """
+            A clinical engineer dictated this while working on ${device?.let { "${it.name} (${it.assetTag})" } ?: "a device"}.
+            Turn it into maintenance documentation: 2 to 4 short bullet points covering what was found,
+            what was done, and any follow-up. Use only what they said. Reply with the bullet points only,
+            in the language they spoke.
+
+            Dictation:
+            $transcript
+        """.trimIndent()
+        val body = JSONObject().put("question", prompt)
+        if (entry != null) body.put("device", JSONObject().put("dataset", entry.ref.dataset).put("key", entry.ref.key))
+        // Its own conversation, so the summary doesn't mix with the engineer's questions.
+        val text = chat("summary-${System.nanoTime()}", body, entry).text
+        // Only the bullet points: the brain sometimes adds a remark after them (e.g. about masked names).
+        val lines = text.lines().map { it.trim() }
+        val bullets = lines.filter { Regex("^([-•]|\\*(?!\\*?note)|\\d+[.)])\\s").containsMatchIn(it.lowercase()) }.ifEmpty { lines.filter { it.isNotEmpty() } }
+        bullets.map { it.replace(Regex("^([-*•]|\\d+[.)])\\s+"), "").replace("**", "").trim() }.filter { it.length > 3 }.take(5).takeIf { it.isNotEmpty() }
+    }.onFailure { Log.w(TAG, "summary failed: ${it.message}") }.getOrNull()
+
     /** Headset answers are read while working, so ask for short ones (they also come back faster). */
     private fun briefing(question: String): String {
         val q = question.lowercase()

@@ -20,6 +20,11 @@ interface TundraBrain {
     suspend fun identify(sessionId: String, image: File): List<ImageMatch>
     /** Devices matching a name, model, asset tag or serial ("this is the Evita"). */
     suspend fun findDevices(query: String): List<Device>
+    /**
+     * What a long spoken documentation boils down to, as a few bullet points (found / done /
+     * follow-up). Null when the brain can't summarise; the transcript is uploaded either way.
+     */
+    suspend fun summarize(device: Device?, transcript: String): List<String>? = null
 }
 
 /**

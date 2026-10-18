@@ -60,6 +60,15 @@ sealed interface BarCard {
     data class Answer(val messageId: Long) : BarCard
     data class ManualOpened(val title: String, val target: ManualTarget?) : BarCard
     data class Saved(val device: Device, val videoSec: Int, val comments: Int, val photos: Int, val sent: Boolean) : BarCard
+    /** Documentation on its way into Tundra: each step as it happens, then the summary. */
+    data class Upload(
+        val title: String,
+        val device: Device,
+        val steps: List<UploadStep>,
+        val summary: List<String> = emptyList(),
+        val transcript: String? = null,
+        val done: Boolean = false,
+    ) : BarCard
     data class Notice(val text: String) : BarCard
     /** Overview of the device being documented. */
     /** What the image search found in the selected region. */
@@ -82,11 +91,21 @@ data class RegionState(
 /** How an identification photo is shown: popped up with its crop, flying into the cloud, then searched. */
 enum class PhotoPhase { Captured, Sending, Searching, Done }
 
+enum class StepKind { Video, Transcript, Summary, Note }
+enum class StepState { Pending, Running, Done, Failed, Skipped }
+data class UploadStep(val kind: StepKind, val label: String, val state: StepState = StepState.Pending, val detail: String? = null)
+
+/** What continuous dictation is for: a video's narration, or a spoken note on its own. */
+enum class Dictation { Video, Note }
+
 /** Things only the activity can do (it owns the camera). */
 sealed interface Effect {
     data object TakePhoto : Effect
     data object StartRecording : Effect
     data object StopRecording : Effect
+    /** Listen to everything (no pinch) until [StopDictation]. */
+    data object StartDictation : Effect
+    data object StopDictation : Effect
 }
 
 data class SessionState(
@@ -119,6 +138,9 @@ data class SessionState(
     val card: BarCard? = null,
     val narration: List<Narration> = emptyList(),
     val region: RegionState? = null,
+    /** Continuous dictation in progress, and the note being dictated (for [Dictation.Note]). */
+    val dictating: Dictation? = null,
+    val noteLines: List<Narration> = emptyList(),
     /** The reply shown in full in the answer panel (charts, tables, long text), by message id. */
     val answerPanel: Long? = null,
 ) {
@@ -195,6 +217,7 @@ class SessionViewModel(app: Application) : AndroidViewModel(app) {
     fun onUtterance(text: String) {
         _state.update { it.copy(hearing = false, heard = "", micLevel = 0f) }
         val s = _state.value
+        if (s.dictating == Dictation.Note) return onNoteSpoken(text)
         handle(parseCommand(text, s.devices, s.isRecording))
     }
 
@@ -210,6 +233,7 @@ class SessionViewModel(app: Application) : AndroidViewModel(app) {
             Command.Identify -> identify(Purpose.Info)
             is Command.FindDevice -> findDevice(command.query)
             Command.RegionCapture -> startRegion()
+            Command.Dictate -> startNote()
             Command.StartRecording -> {
                 val device = s.device ?: return notice("Which device? Say “which device am I looking at”")
                 startDocumentation(device)
@@ -217,6 +241,7 @@ class SessionViewModel(app: Application) : AndroidViewModel(app) {
             Command.Stop -> when {
                 s.isRecording -> {
                     _state.update { it.copy(task = Task("Saving documentation", TaskKind.Save)) }
+                    _effects.trySend(Effect.StopDictation)
                     _effects.trySend(Effect.StopRecording)
                 }
                 flowJob?.isActive == true -> cancelFlow()
@@ -354,8 +379,10 @@ class SessionViewModel(app: Application) : AndroidViewModel(app) {
     private fun startDocumentation(device: Device, keepPhotos: Boolean = false) {
         if (_state.value.isRecording) return
         if (!keepPhotos) docPhotos = 0
-        _state.update { it.copy(card = null, task = null, narration = emptyList(), device = it.device ?: device) }
+        _state.update { it.copy(card = null, task = null, narration = emptyList(), device = it.device ?: device, dictating = Dictation.Video) }
         _effects.trySend(Effect.StartRecording)
+        // Everything said while recording is transcribed for the documentation, no pinch needed.
+        _effects.trySend(Effect.StartDictation)
     }
 
     // ── Region capture ─────────────────────────────────────────────────────
@@ -459,30 +486,157 @@ class SessionViewModel(app: Application) : AndroidViewModel(app) {
     fun onRecordingStopped(file: File?) {
         recordingJob?.cancel()
         val seconds = _state.value.recordingSec.coerceAtLeast(1)
-        val narration = _state.value.narration
         _state.update { it.copy(isRecording = false, recordingSec = 0) }
-        val video = CaptureItem(nextId++, CaptureKind.Video, stamp(), file = file?.path, durationSec = seconds)
-        add(video)
-        if (narration.isNotEmpty()) {
-            val text = narration.joinToString("\n") { "[${it.at}] ${it.text}" }
-            add(CaptureItem(nextId++, CaptureKind.Note, stamp(), transcript = text))
-        }
         val device = _state.value.device ?: return
         viewModelScope.launch {
-            _state.update { it.copy(task = Task("Saving documentation", TaskKind.Save)) }
-            // Wait until the brain has the video, so "saved" means saved.
-            val synced = withTimeoutOrNull(20_000) {
-                while (true) {
-                    val c = _state.value.captures.firstOrNull { it.id == video.id }
-                    if (c == null || c.sync != SyncState.Sending) break
-                    delay(200)
-                }
-                _state.value.captures.firstOrNull { it.id == video.id }?.sync
-            }
-            val sent = synced != null && synced != SyncState.Failed
-            _state.update { it.copy(task = null, narration = emptyList()) }
-            showCard(BarCard.Saved(device, seconds, narration.size, docPhotos, sent), 12_000)
+            // The last sentence is still being recognised when "stop" arrives: let it land.
+            delay(1200)
+            val narration = _state.value.narration
+            _state.update { it.copy(dictating = null, narration = emptyList()) }
+            documentationPipeline(
+                title = "Video documentation",
+                device = device,
+                video = CaptureItem(nextId++, CaptureKind.Video, stamp(), file = file?.path, durationSec = seconds),
+                lines = narration,
+            )
         }
+    }
+
+    // ── Spoken notes ────────────────────────────────────────────────────────
+
+    private var noteSilence: Job? = null
+
+    /** "listen to my documentation": take down everything said until "done" or a long pause. */
+    private fun startNote() {
+        val device = _state.value.device ?: return notice("Which device? Say “what am I looking at right now”")
+        if (_state.value.isRecording || _state.value.dictating != null) return
+        _state.update { it.copy(dictating = Dictation.Note, noteLines = emptyList(), card = null, task = null, device = it.device ?: device) }
+        _effects.trySend(Effect.StartDictation)
+        armNoteSilence()
+    }
+
+    private fun onNoteSpoken(text: String) {
+        val t = text.trim().lowercase().trimEnd('.', '!')
+        when {
+            Regex("^(ok(ay)? )?(done|i'?m done|that'?s (it|all)|finished|stop|end( note)?|save( it)?|upload( it)?|send( it)?)$").matches(t) -> finishNote()
+            Regex("^(cancel|never ?mind|discard( it)?|delete( it)?)$").matches(t) -> {
+                noteSilence?.cancel()
+                _effects.trySend(Effect.StopDictation)
+                _state.update { it.copy(dictating = null, noteLines = emptyList()) }
+                notice("Note discarded")
+            }
+            else -> {
+                val at = formatClock(((System.currentTimeMillis() - sessionStart) / 1000).toInt())
+                // "… and that's it" at the end of a sentence also finishes the note.
+                val ends = Regex("[,. ]+(and )?(that'?s (it|all)|i'?m done|done)$").find(t)
+                val kept = if (ends != null) text.trim().substring(0, ends.range.first).trim() else text.trim()
+                if (kept.isNotEmpty()) _state.update { it.copy(noteLines = it.noteLines + Narration(at, kept)) }
+                if (ends != null) finishNote() else armNoteSilence()
+            }
+        }
+    }
+
+    /** A note ends by itself after a long pause. */
+    private fun armNoteSilence() {
+        noteSilence?.cancel()
+        noteSilence = viewModelScope.launch {
+            delay(12_000)
+            if (_state.value.dictating == Dictation.Note) finishNote()
+        }
+    }
+
+    private fun finishNote() {
+        noteSilence?.cancel()
+        if (_state.value.dictating != Dictation.Note) return
+        _effects.trySend(Effect.StopDictation)
+        val device = _state.value.device ?: return
+        viewModelScope.launch {
+            delay(900)
+            val lines = _state.value.noteLines
+            _state.update { it.copy(dictating = null, noteLines = emptyList()) }
+            if (lines.isEmpty()) return@launch notice("Didn't hear a note")
+            documentationPipeline(title = "Spoken note", device = device, video = null, lines = lines)
+        }
+    }
+
+    // ── Documentation into Tundra ───────────────────────────────────────────
+
+    /**
+     * Uploads a piece of documentation and shows each step: the video (if any), the transcript of
+     * what was said, and — when it was long — a summary by the Tundra brain, uploaded with it.
+     */
+    private suspend fun documentationPipeline(title: String, device: Device, video: CaptureItem?, lines: List<Narration>) {
+        cardJob?.cancel()
+        val transcript = lines.joinToString("\n") { "[${it.at}] ${it.text}" }
+        val words = lines.sumOf { it.text.split(Regex("\\s+")).size }
+        val summarise = words >= 25
+        val steps = buildList {
+            if (video != null) add(UploadStep(StepKind.Video, "Video · ${formatClock(video.durationSec)}"))
+            if (lines.isNotEmpty()) add(UploadStep(StepKind.Transcript, "Transcript · $words words"))
+            if (summarise) add(UploadStep(StepKind.Summary, "Summary by Tundra"))
+            if (video == null && lines.isNotEmpty()) add(UploadStep(StepKind.Note, "Note to ${device.assetTag}"))
+        }
+        var card = BarCard.Upload(title, device, steps, transcript = lines.joinToString(" ") { it.text }.takeIf { it.isNotBlank() })
+        fun show() = _state.update { it.copy(card = card, task = Task("Uploading documentation", TaskKind.Save)) }
+        fun step(kind: StepKind, state: StepState, detail: String? = null) {
+            card = card.copy(steps = card.steps.map { if (it.kind == kind) it.copy(state = state, detail = detail ?: it.detail) else it })
+            show()
+        }
+        show()
+        delay(500)
+
+        if (video != null) {
+            step(StepKind.Video, StepState.Running)
+            val ok = addAndWait(video)
+            step(StepKind.Video, if (ok) StepState.Done else StepState.Failed, if (ok) "in Tundra" else "not sent")
+        }
+        if (lines.isNotEmpty()) {
+            step(StepKind.Transcript, StepState.Running)
+            delay(700) // it was transcribed live; this is the moment it's put together
+            step(StepKind.Transcript, StepState.Done, "${lines.size} part${if (lines.size == 1) "" else "s"}")
+        }
+        var summary: List<String>? = null
+        if (summarise) {
+            step(StepKind.Summary, StepState.Running, "dissecting what you said…")
+            summary = brain.summarize(device, transcript)
+            if (summary != null) {
+                card = card.copy(summary = summary)
+                step(StepKind.Summary, StepState.Done, "${summary.size} points")
+            } else step(StepKind.Summary, StepState.Skipped, "transcript only")
+        }
+        if (lines.isNotEmpty()) {
+            val kind = if (video == null) StepKind.Note else StepKind.Transcript
+            if (video == null) step(StepKind.Note, StepState.Running)
+            val text = buildString {
+                if (video != null) append("Narration of the video documentation (${formatClock(video.durationSec)}).\n\n")
+                if (summary != null) append("Summary:\n").append(summary.joinToString("\n") { "- $it" }).append("\n\n")
+                append("Transcript:\n").append(transcript)
+            }
+            val ok = addAndWait(CaptureItem(nextId++, CaptureKind.Note, stamp(), transcript = text))
+            if (video == null) step(kind, if (ok) StepState.Done else StepState.Failed, if (ok) "in Tundra" else "not sent")
+            else if (!ok) step(StepKind.Transcript, StepState.Failed, "not sent")
+        }
+        card = card.copy(done = true)
+        _state.update { it.copy(card = card, task = null) }
+        val shown = card
+        cardJob = viewModelScope.launch {
+            delay(if (shown.summary.isNotEmpty()) 20_000 else 10_000)
+            _state.update { if (it.card == shown) it.copy(card = null) else it }
+        }
+    }
+
+    /** Adds a capture and waits until the brain has it (or says it can't). */
+    private suspend fun addAndWait(item: CaptureItem): Boolean {
+        add(item)
+        val sync = withTimeoutOrNull(60_000) {
+            while (true) {
+                val c = _state.value.captures.firstOrNull { it.id == item.id }
+                if (c == null || c.sync != SyncState.Sending) break
+                delay(150)
+            }
+            _state.value.captures.firstOrNull { it.id == item.id }?.sync
+        }
+        return sync != null && sync != SyncState.Failed
     }
 
     fun onShutter() = _state.update { it.copy(photoFlash = System.currentTimeMillis()) }

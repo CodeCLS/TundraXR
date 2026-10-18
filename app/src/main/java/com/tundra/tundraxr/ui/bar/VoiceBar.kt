@@ -40,6 +40,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -61,6 +65,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.tundra.tundraxr.BarCard
+import com.tundra.tundraxr.Dictation
+import com.tundra.tundraxr.StepKind
+import com.tundra.tundraxr.StepState
+import com.tundra.tundraxr.UploadStep
 import com.tundra.tundraxr.PhotoPhase
 import com.tundra.tundraxr.R
 import com.tundra.tundraxr.SessionState
@@ -181,6 +189,7 @@ fun VoiceBar(
                             BarMode.Hearing -> Hearing(state)
                             BarMode.Working -> Working(state)
                             BarMode.Recording -> Recording(state)
+                            BarMode.Note -> NoteLine(state)
                         }
                     }
                 }
@@ -210,10 +219,11 @@ fun VoiceBar(
     }
 }
 
-private enum class BarMode { Rest, Hearing, Working, Recording }
+private enum class BarMode { Rest, Hearing, Working, Recording, Note }
 
 private fun barMode(s: SessionState) = when {
     s.isRecording -> BarMode.Recording
+    s.dictating == Dictation.Note -> BarMode.Note
     s.hearing -> BarMode.Hearing
     s.task != null -> BarMode.Working
     else -> BarMode.Rest
@@ -290,7 +300,20 @@ private fun RowScope.Recording(state: SessionState) {
         if (words == null) Island.muted else Island.text,
         Modifier.weight(1f).padding(start = 12.dp),
     )
-    if (!state.hearing) Text("say stop", style = MonoSmallStyle, color = Island.faint, modifier = Modifier.padding(start = 10.dp))
+    if (!state.hearing) Text(if (state.dictating == Dictation.Video) "listening · say stop" else "say stop", style = MonoSmallStyle, color = Island.faint, modifier = Modifier.padding(start = 10.dp))
+}
+
+/** Taking down a spoken note: always listening, the words as they come, "say done" to finish. */
+@Composable
+private fun RowScope.NoteLine(state: SessionState) {
+    VoiceWave(if (state.hearing) state.micLevel else 0.05f, Island.ok)
+    val words = state.heard.ifEmpty { state.noteLines.lastOrNull()?.text.orEmpty() }
+    LiveWords(
+        words.ifEmpty { "Listening to your note…" },
+        if (words.isEmpty()) Island.muted else Island.text,
+        Modifier.weight(1f).padding(start = 14.dp),
+    )
+    Text("say done", style = MonoSmallStyle, color = Island.faint, modifier = Modifier.padding(start = 10.dp))
 }
 
 /** The tail of what's being said: new words push old ones out to the left. */
@@ -318,6 +341,127 @@ private fun Card(card: BarCard, state: SessionState, onCitation: () -> Unit) {
         is BarCard.Notice -> Text(card.text, style = MaterialTheme.typography.bodyMedium, color = Island.muted)
         is BarCard.DeviceInfo -> DeviceCard(card)
         is BarCard.RegionMatch -> RegionCard(card)
+        is BarCard.Upload -> UploadCard(card)
+    }
+}
+
+/**
+ * Documentation going into Tundra: a cloud at the top that pulses while things fly up into it and
+ * turns into a check when everything's there; each step below it; then what the brain made of it.
+ */
+@Composable
+private fun UploadCard(card: BarCard.Upload) {
+    Column {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            UploadCloud(done = card.done, failed = card.steps.any { it.state == StepState.Failed }, busy = card.steps.any { it.state == StepState.Running })
+            Column(Modifier.padding(start = 14.dp).weight(1f)) {
+                Text(
+                    when {
+                        !card.done -> "Uploading ${card.title.lowercase()}"
+                        card.steps.any { it.state == StepState.Failed } -> "${card.title} partly saved"
+                        else -> "${card.title} saved"
+                    },
+                    style = MaterialTheme.typography.titleMedium,
+                    color = Island.text,
+                )
+                Text("${card.device.name.ifEmpty { card.device.category }} · ${card.device.assetTag}", style = MaterialTheme.typography.bodySmall, color = Island.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        Spacer(Modifier.height(14.dp))
+        card.steps.forEach { StepRow(it) }
+        if (card.summary.isNotEmpty()) {
+            Spacer(Modifier.height(12.dp))
+            Box(Modifier.fillMaxWidth().height(1.dp).background(Island.divider))
+            Label("Summary", Island.agent, Modifier.padding(top = 12.dp))
+            card.summary.forEachIndexed { i, point ->
+                // Points arrive one after another, like they're being pulled out of what was said.
+                var shown by remember(point) { mutableStateOf(false) }
+                LaunchedEffect(point) { delay(140L * i); shown = true }
+                AnimatedVisibility(shown, enter = fadeIn(tween(Motion.Base)) + expandVertically(tween(Motion.Base))) {
+                    Row(Modifier.padding(top = 6.dp)) {
+                        Box(Modifier.padding(top = 9.dp).size(5.dp).background(Island.agent, CircleShape))
+                        Text(point, style = MaterialTheme.typography.bodyMedium, color = Island.text, modifier = Modifier.padding(start = 10.dp))
+                    }
+                }
+            }
+        } else if (card.transcript != null && card.steps.none { it.kind == StepKind.Summary && it.state == StepState.Running }) {
+            Text(
+                "“${card.transcript}”",
+                style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic),
+                color = Island.muted,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 10.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun StepRow(step: UploadStep) {
+    val icon = when (step.kind) {
+        StepKind.Video -> R.drawable.ic_videocam
+        StepKind.Transcript -> R.drawable.ic_mic
+        StepKind.Summary -> R.drawable.ic_sparkle
+        StepKind.Note -> R.drawable.ic_send
+    }
+    val color = when (step.state) {
+        StepState.Done -> Island.ok
+        StepState.Failed -> Island.record
+        StepState.Running -> Island.agent
+        else -> Island.faint
+    }
+    Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(30.dp).clip(CircleShape).background(color.copy(alpha = 0.16f)), contentAlignment = Alignment.Center) {
+            Icon(painterResource(icon), null, Modifier.size(16.dp), tint = color)
+        }
+        Column(Modifier.padding(start = 12.dp).weight(1f)) {
+            Text(step.label, style = MaterialTheme.typography.bodyMedium, color = if (step.state == StepState.Pending) Island.muted else Island.text)
+            if (step.state == StepState.Running) FlyingBar(color)
+            else step.detail?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = Island.faint) }
+        }
+        when (step.state) {
+            StepState.Done -> Icon(painterResource(R.drawable.ic_check), "Done", Modifier.size(18.dp), tint = Island.ok)
+            StepState.Failed -> Icon(painterResource(R.drawable.ic_alert), "Failed", Modifier.size(18.dp), tint = Island.record)
+            StepState.Running -> Pulse { Icon(painterResource(R.drawable.ic_cloud), null, Modifier.size(18.dp), tint = Island.agent) }
+            else -> Unit
+        }
+    }
+}
+
+/** A small packet travelling along a track toward the cloud, over and over, while a step runs. */
+@Composable
+private fun FlyingBar(color: Color) {
+    val t = rememberInfiniteTransition(label = "fly")
+    val x by t.animateFloat(0f, 1f, infiniteRepeatable(tween(1100, easing = Motion.EaseIn)), label = "x")
+    Canvas(Modifier.padding(top = 6.dp).fillMaxWidth().height(4.dp)) {
+        drawRoundRect(color.copy(alpha = 0.15f), cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.dp.toPx()))
+        val w = size.width * 0.22f
+        val left = (size.width + w) * x - w
+        drawRoundRect(
+            color.copy(alpha = 0.35f + 0.65f * x),
+            topLeft = Offset(left.coerceAtLeast(0f), 0f),
+            size = androidx.compose.ui.geometry.Size((w + left.coerceAtMost(0f)).coerceAtLeast(0f).coerceAtMost(size.width - left.coerceAtLeast(0f)), size.height),
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.dp.toPx()),
+        )
+    }
+}
+
+/** The cloud: pulsing (and gently rising) while uploading, a check when it's all there. */
+@Composable
+private fun UploadCloud(done: Boolean, failed: Boolean, busy: Boolean) {
+    val t = rememberInfiniteTransition(label = "upcloud")
+    val lift by t.animateFloat(0f, 1f, infiniteRepeatable(tween(900, easing = Motion.EaseStandard), RepeatMode.Reverse), label = "lift")
+    val color = when { failed -> Island.warn; done -> Island.ok; else -> Island.agent }
+    Box(Modifier.size(48.dp).clip(CircleShape).background(color.copy(alpha = 0.16f)), contentAlignment = Alignment.Center) {
+        AnimatedContent(done, transitionSpec = { fadeIn(tween(Motion.Base)) togetherWith fadeOut(tween(Motion.Fast)) }, label = "cloudstate") { d ->
+            if (d) Icon(painterResource(if (failed) R.drawable.ic_alert else R.drawable.ic_check), null, Modifier.size(24.dp), tint = color)
+            else Icon(
+                painterResource(R.drawable.ic_cloud), null,
+                Modifier.size(26.dp).graphicsLayer { translationY = if (busy) -3.dp.toPx() * lift else 0f; alpha = if (busy) 0.6f + 0.4f * lift else 1f },
+                tint = color,
+            )
+        }
     }
 }
 
