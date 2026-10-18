@@ -19,3 +19,7 @@ server/manuals/*.pdf
 
 # Design-system mood board and reference screenshots: third-party images, kept local only.
 /Tundra Health Design System/uploads/
+
+# Built by tools/cropper/export.py (EfficientSAM-Ti, ~40 MB).
+app/src/main/assets/device_cropper.pte
+__pycache__/
