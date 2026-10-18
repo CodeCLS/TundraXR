@@ -41,6 +41,10 @@ android {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
+    androidResources {
+        // The cropper's ExecuTorch program is read straight from the APK, so it stays uncompressed.
+        noCompress += "pte"
+    }
     buildFeatures {
         compose = true
         buildConfig = true
@@ -66,6 +70,8 @@ dependencies {
     implementation(libs.androidx.camera.camera2)
     implementation(libs.androidx.camera.lifecycle)
     implementation(libs.androidx.camera.video)
+    // On-device crop before image search (capture/DeviceCropper.kt, tools/cropper/).
+    implementation(libs.executorch.android)
     // Stub jar: the real implementation ships in the headset's system image. Bundling it in the
     // APK shadows the system copy, every call throws "Stub!", and the XR session never starts.
     compileOnly(libs.extensions1.xr)

@@ -15,6 +15,7 @@ compose = "1.0.0-alpha16"
 runtime = "1.0.0-beta01"
 scenecore = "1.0.0-beta01"
 camerax = "1.6.2"
+executorch = "1.5.1"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -42,6 +43,7 @@ androidx-camera-lifecycle = { group = "androidx.camera", name = "camera-lifecycl
 androidx-camera-video = { group = "androidx.camera", name = "camera-video", version.ref = "camerax" }
 androidx-arcore = { group = "androidx.xr.arcore", name = "arcore", version.ref = "runtime" }
 androidx-scenecore = { group = "androidx.xr.scenecore", name = "scenecore", version.ref = "scenecore" }
+executorch-android = { group = "org.pytorch", name = "executorch-android", version.ref = "executorch" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
