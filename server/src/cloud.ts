@@ -132,7 +132,8 @@ export class TundraCloud {
       openWorkOrders: Number(k.open_work_orders ?? 0),
       manual: {
         documentId: meta ? documentId : null,
-        title: meta?.title ?? (m?.doc_number ? `Manual ${m.doc_number}` : "Manual"),
+        // File names can be masked (<PSN-…>.pdf); then name it after the device.
+        title: clean(meta?.title).replace(/\.pdf$/i, "") || (m?.doc_number ? `Manual ${m.doc_number}` : `${type || model || "Device"} · Manual`),
         revision: String(m?.revision ?? m?.doc_number ?? ""),
         portalUrl: m?.portal_url ?? null,
         isPdf: meta?.contentType?.includes("pdf") ?? false,
