@@ -19,6 +19,7 @@ import com.tundra.tundraxr.data.ManualTarget
 import com.tundra.tundraxr.data.SyncState
 import com.tundra.tundraxr.data.TundraBrain
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -50,6 +51,10 @@ sealed interface BarCard {
         val lines: List<String> = emptyList(),
         val device: Device? = null,
         val countdown: Int? = null,
+        /** The on-device crop as fractions (left, top, right, bottom); null = the whole view was kept. */
+        val box: List<Float>? = null,
+        val cropMs: Long? = null,
+        val phase: PhotoPhase = PhotoPhase.Done,
     ) : BarCard
     data class Answer(val messageId: Long) : BarCard
     data class ManualOpened(val title: String, val target: ManualTarget?) : BarCard
@@ -72,6 +77,9 @@ data class RegionState(
     val searching: Boolean = false,
     val matches: List<ImageMatch> = emptyList(),
 )
+
+/** How an identification photo is shown: popped up with its crop, flying into the cloud, then searched. */
+enum class PhotoPhase { Captured, Sending, Searching, Done }
 
 /** Things only the activity can do (it owns the camera). */
 sealed interface Effect {
@@ -123,7 +131,8 @@ class SessionViewModel(app: Application) : AndroidViewModel(app) {
     private val cropper = DeviceCropper(app)
 
     // Demo builds (tundra.demo=true) answer from the scripted brain so the UI can be tested offline.
-    private val brain: TundraBrain = if (BuildConfig.TUNDRA_DEMO) DemoBrain() else LocalBrain(BuildConfig.TUNDRA_SERVER_URL, cropper)
+    // Identification photos are cropped here (so the island can show the crop), not in the brain client.
+    private val brain: TundraBrain = if (BuildConfig.TUNDRA_DEMO) DemoBrain() else LocalBrain(BuildConfig.TUNDRA_SERVER_URL)
 
     private val _state = MutableStateFlow(SessionState())
     val state: StateFlow<SessionState> = _state.asStateFlow()
@@ -262,8 +271,20 @@ class SessionViewModel(app: Application) : AndroidViewModel(app) {
                 _state.update { it.copy(task = null) }
                 return@launch notice("The camera isn't available")
             }
-            _state.update { it.copy(task = Task("Identifying with Tundra", TaskKind.Analyze), card = BarCard.Photo(file.path)) }
-            val result = runCatching { brain.identify(sessionId, file) }
+            // 1. Crop to the device on the headset, and show the photo with that crop.
+            _state.update { it.copy(task = Task("Cropping on headset", TaskKind.Analyze), card = BarCard.Photo(file.path, phase = PhotoPhase.Captured)) }
+            val crop = if (BuildConfig.TUNDRA_DEMO) null else runCatching { cropper.crop(file) }.getOrNull()
+            updatePhotoCard { it.copy(box = crop?.box?.let { b -> fractions(file, b) }, cropMs = crop?.millis) }
+            // 2. Search while the photo is on show, so the animation costs no time.
+            val search = async { runCatching { brain.identify(sessionId, crop?.file ?: file) } }
+            delay(1900)
+            _state.update { it.copy(task = Task("Sending to Tundra", TaskKind.Analyze)) }
+            updatePhotoCard { it.copy(phase = PhotoPhase.Sending) }
+            delay(950)
+            _state.update { it.copy(task = Task("Searching Tundra", TaskKind.Analyze)) }
+            updatePhotoCard { it.copy(phase = PhotoPhase.Searching) }
+            val result = search.await()
+            updatePhotoCard { it.copy(phase = PhotoPhase.Done) }
             val matches = result.getOrElse { e ->
                 _state.update { it.copy(task = null) }
                 return@launch showCard(BarCard.Notice("Couldn't identify: ${e.message?.take(140)}"), 8000)
@@ -301,6 +322,15 @@ class SessionViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
     }
+
+    /** A crop box in photo pixels as fractions of the photo. */
+    private fun fractions(file: File, box: android.graphics.Rect): List<Float>? = runCatching {
+        val o = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        android.graphics.BitmapFactory.decodeFile(file.path, o)
+        val w = o.outWidth.toFloat()
+        val h = o.outHeight.toFloat()
+        listOf(box.left / w, box.top / h, box.right / w, box.bottom / h).map { it.coerceIn(0f, 1f) }
+    }.getOrNull()
 
     private fun findDevice(query: String) {
         flowJob?.cancel()

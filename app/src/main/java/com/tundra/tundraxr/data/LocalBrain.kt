@@ -73,8 +73,8 @@ class LocalBrain(private val baseUrl: String, private val cropper: DeviceCropper
     }
 
     override suspend fun identify(sessionId: String, image: File): List<ImageMatch> {
-        // Crop the photo to the device first (on the headset, ~0.5 s), unless the engineer already
-        // drew the region themselves. Without the model the cropper hands the photo back unchanged.
+        // Crop the photo to the device first (on the headset), unless the engineer already drew the
+        // region or the caller cropped it. Without the model the cropper hands the photo back unchanged.
         val c = cropper
         val cropped = if (image.name.startsWith("region_") || c == null) image
         else runCatching { c.crop(image) }

@@ -47,6 +47,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
@@ -59,6 +61,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.tundra.tundraxr.BarCard
+import com.tundra.tundraxr.PhotoPhase
 import com.tundra.tundraxr.R
 import com.tundra.tundraxr.SessionState
 import com.tundra.tundraxr.TaskKind
@@ -383,11 +386,23 @@ private fun Label(text: String, color: Color = Island.faint, modifier: Modifier 
 
 @Composable
 private fun PhotoCard(card: BarCard.Photo) {
+    // First the photo pops up with its crop, then flies into the cloud; then the compact result.
+    if (card.phase == PhotoPhase.Captured || card.phase == PhotoPhase.Sending) return PhotoPop(card)
     Column {
         Row {
-            Thumb(card.file, 132.dp, 99.dp, scanning = card.device == null)
+            Box {
+                Thumb(card.file, 132.dp, 99.dp, scanning = false, box = card.box)
+                if (card.phase == PhotoPhase.Searching) SearchingCloud(Modifier.align(Alignment.Center))
+            }
             Column(Modifier.padding(start = 16.dp).weight(1f)) {
-                Label(if (card.device == null) "Analyzing photo" else "Photo analysis", Island.agent)
+                Label(
+                    when {
+                        card.phase == PhotoPhase.Searching -> "Searching Tundra…"
+                        card.device == null && card.lines.isEmpty() -> "Identifying"
+                        else -> "Tundra image search"
+                    },
+                    Island.agent,
+                )
                 Spacer(Modifier.height(6.dp))
                 card.lines.forEach { line ->
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 2.dp)) {
@@ -517,7 +532,7 @@ private fun Stat(value: String, label: String) {
 }
 
 @Composable
-private fun Thumb(file: String?, w: Dp, h: Dp, scanning: Boolean) {
+private fun Thumb(file: String?, w: Dp, h: Dp, scanning: Boolean, box: List<Float>? = null) {
     val bitmap by produceState<ImageBitmap?>(null, file) {
         if (file != null) value = withContext(Dispatchers.IO) { decodeThumb(file, targetPx = 480) }
     }
@@ -528,6 +543,97 @@ private fun Thumb(file: String?, w: Dp, h: Dp, scanning: Boolean) {
         else Icon(painterResource(R.drawable.ic_camera), null, Modifier.size(24.dp), tint = Island.muted)
         // A scan line sweeps the photo while it's being analysed.
         if (scanning) ScanSweep(Modifier.matchParentSize())
+        if (box != null && bmp != null) CropOverlay(box, Modifier.matchParentSize(), corners = 8.dp)
+    }
+}
+
+/**
+ * The identification photo, large for a moment so the engineer sees what was captured and what the
+ * headset cropped it to; then it shrinks and flies up into the cloud: it's on its way to Tundra.
+ */
+@Composable
+private fun PhotoPop(card: BarCard.Photo) {
+    val bitmap by produceState<ImageBitmap?>(null, card.file) {
+        val f = card.file
+        if (f != null) value = withContext(Dispatchers.IO) { decodeThumb(f, targetPx = 1000) }
+    }
+    val sending = card.phase == PhotoPhase.Sending
+    val fly by animateFloatAsState(if (sending) 1f else 0f, tween(850, easing = Motion.EaseIn), label = "fly")
+    val pop by animateFloatAsState(if (bitmap != null) 1f else 0.92f, tween(Motion.Slow, easing = Motion.EaseOut), label = "pop")
+    Box(Modifier.fillMaxWidth().height(330.dp)) {
+        // The cloud waits at the top; the photo flies into it.
+        Column(
+            Modifier.align(Alignment.TopCenter).alpha((fly * 1.6f).coerceAtMost(1f)),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Icon(painterResource(R.drawable.ic_cloud), null, Modifier.size(44.dp).graphicsLayer { scaleX = 1f + 0.12f * fly; scaleY = 1f + 0.12f * fly }, tint = Island.agent)
+            Text("Sending to Tundra", style = MaterialTheme.typography.labelLarge, color = Island.agent, modifier = Modifier.padding(top = 2.dp))
+        }
+        Column(
+            Modifier.align(Alignment.BottomCenter).graphicsLayer {
+                val s = pop * (1f - 0.86f * fly)
+                scaleX = s
+                scaleY = s
+                translationY = -size.height * 0.62f * fly
+                alpha = 1f - fly * fly
+            },
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            val bmp = bitmap
+            val shape = RoundedCornerShape(16.dp)
+            val ratio = bmp?.let { it.width.toFloat() / it.height } ?: (4f / 3f)
+            Box(Modifier.height(250.dp).width((250 * ratio).coerceAtMost(496f).dp).clip(shape).background(Color(0xFF3A3833))) {
+                if (bmp != null) {
+                    Image(bmp, "Photo", Modifier.matchParentSize(), contentScale = ContentScale.Crop)
+                    card.box?.let { CropOverlay(it, Modifier.matchParentSize(), corners = 18.dp) }
+                }
+            }
+            Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(painterResource(R.drawable.ic_scan), null, Modifier.size(16.dp), tint = Island.muted)
+                Text(
+                    when {
+                        card.cropMs == null -> "Cropping on headset…"
+                        card.box != null -> "Cropped on headset · ${card.cropMs} ms"
+                        else -> "Whole view · no device outline found (${card.cropMs} ms)"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Island.muted,
+                    modifier = Modifier.padding(start = 8.dp),
+                )
+            }
+        }
+    }
+}
+
+/** Dims everything outside the crop and marks its corners, like a viewfinder. */
+@Composable
+private fun CropOverlay(box: List<Float>, modifier: Modifier, corners: Dp) {
+    val t = rememberInfiniteTransition(label = "crop")
+    val glow by t.animateFloat(0.55f, 1f, infiniteRepeatable(tween(900, easing = Motion.EaseStandard), RepeatMode.Reverse), label = "glow")
+    Canvas(modifier) {
+        val r = androidx.compose.ui.geometry.Rect(box[0] * size.width, box[1] * size.height, box[2] * size.width, box[3] * size.height)
+        val hole = androidx.compose.ui.graphics.Path().apply { addRect(r) }
+        clipPath(hole, androidx.compose.ui.graphics.ClipOp.Difference) { drawRect(Color(0x8C000000)) }
+        drawRect(Island.agent.copy(alpha = glow), r.topLeft, r.size, style = androidx.compose.ui.graphics.drawscope.Stroke(2.dp.toPx()))
+        val c = corners.toPx()
+        val w = 3.5.dp.toPx()
+        listOf(
+            r.topLeft to Offset(1f, 1f), Offset(r.right, r.top) to Offset(-1f, 1f),
+            Offset(r.left, r.bottom) to Offset(1f, -1f), r.bottomRight to Offset(-1f, -1f),
+        ).forEach { (p, d) ->
+            drawLine(Island.text, p, p + Offset(c * d.x, 0f), w, StrokeCap.Round)
+            drawLine(Island.text, p, p + Offset(0f, c * d.y), w, StrokeCap.Round)
+        }
+    }
+}
+
+/** A pulsing cloud over the thumbnail while Tundra searches. */
+@Composable
+private fun SearchingCloud(modifier: Modifier) {
+    val t = rememberInfiniteTransition(label = "cloud")
+    val a by t.animateFloat(0.45f, 1f, infiniteRepeatable(tween(700, easing = Motion.EaseStandard), RepeatMode.Reverse), label = "a")
+    Box(modifier.size(52.dp).clip(CircleShape).background(Island.surface.copy(alpha = 0.85f)), contentAlignment = Alignment.Center) {
+        Icon(painterResource(R.drawable.ic_cloud), null, Modifier.size(30.dp).alpha(a), tint = Island.agent)
     }
 }
 
