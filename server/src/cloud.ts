@@ -256,7 +256,7 @@ export class TundraCloud {
    * background job, polls the thread until that turn is finished.
    */
   async ask(sessionId: string, question: string, ref: CloudRef | null, language = "en"): Promise<CloudAnswer> {
-    const body: any = { question, language };
+    const body: any = { question: question + briefing(question), language };
     if (ref) body.device = ref;
     const conversation = this.conversations.get(sessionId);
     if (conversation) body.conversation_id = conversation;
@@ -322,6 +322,19 @@ export class TundraCloud {
     const r = await this.post<any>("/library/files", { filename, text, kind, device: ref });
     return String(r.document_id ?? "");
   }
+}
+
+/**
+ * Answers are read in a headset while working on a device, so ask for short ones (which also
+ * come back much faster). Asking for detail or a chart explicitly still gets it.
+ */
+function briefing(question: string): string {
+  const q = question.toLowerCase();
+  if (/\b(in detail|detailed|explain fully|full report|step by step|ausführlich|im detail)\b/.test(q)) return "";
+  const visual = /\b(chart|graph|plot|diagram|diagramm|table|tabelle|visuali[sz]e)\b/.test(q);
+  return visual
+    ? "\n\n(Answer for a headset display: show the chart or table, plus at most two short sentences. No headings.)"
+    : "\n\n(Answer for a headset display: short, at most 3 sentences or 3 bullet points, no headings, no tables or charts unless asked.)";
 }
 
 function toSources(passages: any[] | undefined): CloudSource[] {
